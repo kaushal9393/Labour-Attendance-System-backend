@@ -80,7 +80,7 @@ async def register_employee(
         await db.execute(
             text(
                 "INSERT INTO face_vectors (employee_id, face_vector, angle_type) "
-                "VALUES (:eid, :vec::vector, :angle)"
+                "VALUES (:eid, CAST(:vec AS vector), :angle)"
             ),
             {"eid": employee_id, "vec": vec_str, "angle": angle},
         )

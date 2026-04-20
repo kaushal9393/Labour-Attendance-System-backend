@@ -2,6 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from typing import List
+import base64
+import cv2
+import numpy as np
 
 from core.database import get_db
 from core.security import get_current_user
@@ -45,6 +48,23 @@ async def register_employee(
     user:    dict         = Depends(get_current_user),
 ):
     company_id = user["company_id"]
+
+    # 0. Validate images before processing
+    for photo_b64 in payload.photos:
+        try:
+            b64_str = photo_b64.split(",", 1)[1] if "," in photo_b64 else photo_b64
+            contents = base64.b64decode(b64_str)
+            if not contents or len(contents) < 1000:
+                raise HTTPException(status_code=400, detail="Invalid or empty image")
+            
+            np_arr = np.frombuffer(contents, np.uint8)
+            img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+            if img is None:
+                raise HTTPException(status_code=400, detail="Could not decode image")
+        except Exception as e:
+            if isinstance(e, HTTPException):
+                raise e
+            raise HTTPException(status_code=400, detail="Invalid image encoding")
 
     # 1. Generate ArcFace embeddings from 25 photos
     try:

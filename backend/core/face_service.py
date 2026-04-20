@@ -131,13 +131,29 @@ def get_embedding(b64_image: str) -> Optional[List[float]]:
     Returns 512-dim embedding list or None on failure.
     """
     try:
-        img_bgr = _base64_to_bgr(b64_image)
+        if "," in b64_image:
+            b64_str = b64_image.split(",", 1)[1]
+        else:
+            b64_str = b64_image
+        image_bytes = base64.b64decode(b64_str)
+        
+        # Decode image bytes to numpy array
+        np_arr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+
+        # Resize to minimum size DeepFace expects
+        img = cv2.resize(img, (160, 160))
+
+        # Convert BGR to RGB (DeepFace expects RGB)
+        img_array = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
         DeepFace = _get_deepface()
         result = DeepFace.represent(
-            img_path=img_bgr,
+            img_path=img_array,
             model_name="ArcFace",
-            enforce_detection=False,
             detector_backend="opencv",
+            enforce_detection=False,
+            align=True
         )
         if result and len(result) > 0:
             return result[0]["embedding"]  # 512-dim list

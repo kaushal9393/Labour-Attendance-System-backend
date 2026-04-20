@@ -51,7 +51,7 @@ async def scan_face(
     row = await db.execute(
         text(
             "SELECT employee_id, employee_name, similarity, angle_type "
-            "FROM find_matching_employee(:vec::vector, :threshold, :cid)"
+            "FROM find_matching_employee(CAST(:vec AS vector), :threshold, :cid)"
         ),
         {"vec": vec_str, "threshold": COSINE_THRESHOLD, "cid": company_id},
     )

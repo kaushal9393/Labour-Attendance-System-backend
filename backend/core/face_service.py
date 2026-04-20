@@ -9,6 +9,8 @@ detection for the Garage Attendance System.
 # this flag forces the legacy tf-keras shim that DeepFace expects.
 import os
 os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
+os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 
 import base64
 import io
@@ -50,8 +52,25 @@ def _get_face_mesh():
 
 
 # ── Helpers ──────────────────────────────────────────────────
+def decode_base64_image(base64_string: str) -> Optional[np.ndarray]:
+    """Decode base64 (with or without data: prefix) to BGR uint8 ndarray, or None on failure."""
+    try:
+        if "," in base64_string:
+            base64_string = base64_string.split(",", 1)[1]
+        img_bytes = base64.b64decode(base64_string)
+        np_arr = np.frombuffer(img_bytes, dtype=np.uint8)
+        img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        if img is None:
+            logger.warning("cv2.imdecode returned None")
+            return None
+        return img
+    except Exception as e:
+        logger.warning(f"Image decode failed: {str(e)}")
+        return None
+
+
 def _base64_to_bgr(b64: str) -> np.ndarray:
-    """Decode a base64 string (with or without data: prefix) to BGR ndarray."""
+    """Legacy PIL-based decoder kept for liveness path compatibility."""
     if "," in b64:
         b64 = b64.split(",", 1)[1]
     img_bytes = base64.b64decode(b64)
@@ -125,42 +144,52 @@ def check_liveness(b64_image: str) -> Tuple[bool, str]:
 
 
 # ── ArcFace embedding ─────────────────────────────────────────
-def get_embedding(b64_image: str) -> Optional[List[float]]:
-    """
-    Run DeepFace ArcFace on a single base64 image.
-    Returns 512-dim embedding list or None on failure.
-    """
+def extract_embedding(img: np.ndarray) -> Optional[List[float]]:
+    """Run DeepFace ArcFace on a BGR uint8 ndarray. Returns 512-dim list or None."""
     try:
-        if "," in b64_image:
-            b64_str = b64_image.split(",", 1)[1]
-        else:
-            b64_str = b64_image
-        image_bytes = base64.b64decode(b64_str)
-        
-        # Decode image bytes to numpy array
-        np_arr = np.frombuffer(image_bytes, np.uint8)
-        img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-
-        # Resize to minimum size DeepFace expects
-        img = cv2.resize(img, (160, 160))
-
-        # Convert BGR to RGB (DeepFace expects RGB)
-        img_array = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        if img is None or not isinstance(img, np.ndarray):
+            logger.warning("Invalid image input — not a numpy array")
+            return None
+        if img.dtype != np.uint8:
+            img = img.astype(np.uint8)
+        if len(img.shape) != 3 or img.shape[2] != 3:
+            logger.warning(f"Bad image shape: {img.shape}")
+            return None
+        if img.shape[0] < 10 or img.shape[1] < 10:
+            logger.warning("Image too small")
+            return None
 
         DeepFace = _get_deepface()
         result = DeepFace.represent(
-            img_path=img_array,
+            img_path=img,
             model_name="ArcFace",
             detector_backend="opencv",
             enforce_detection=False,
-            align=True
+            align=True,
         )
-        if result and len(result) > 0:
-            return result[0]["embedding"]  # 512-dim list
+
+        if not result or len(result) == 0:
+            logger.warning("DeepFace returned empty result")
+            return None
+
+        embedding = result[0]["embedding"]
+        if len(embedding) != 512:
+            logger.warning(f"Unexpected embedding size: {len(embedding)}")
+            return None
+
+        return [float(x) for x in embedding]
+
+    except Exception as e:
+        logger.warning(f"Embedding failed: {str(e)}")
         return None
-    except Exception as exc:
-        logger.warning(f"[ArcFace] Embedding failed: {exc}")
+
+
+def get_embedding(b64_image: str) -> Optional[List[float]]:
+    """Base64 wrapper around extract_embedding."""
+    img = decode_base64_image(b64_image)
+    if img is None:
         return None
+    return extract_embedding(img)
 
 
 def average_embeddings(embeddings: List[List[float]]) -> List[float]:

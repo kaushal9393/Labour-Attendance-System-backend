@@ -136,7 +136,7 @@ def get_embedding(b64_image: str) -> Optional[List[float]]:
         result = DeepFace.represent(
             img_path=img_bgr,
             model_name="ArcFace",
-            enforce_detection=True,
+            enforce_detection=False,
             detector_backend="opencv",
         )
         if result and len(result) > 0:
@@ -188,10 +188,10 @@ def process_registration_photos(photos: List[str]) -> dict:
             emb = get_embedding(p)
             if emb is not None:
                 embeddings.append(emb)
-        if len(embeddings) < 2:
+        if len(embeddings) < 1:
             raise ValueError(
                 f"Not enough valid face photos for angle '{angle}' "
-                f"(got {len(embeddings)}/min 2)"
+                f"(got {len(embeddings)}/min 1)"
             )
         result[angle] = average_embeddings(embeddings)
 

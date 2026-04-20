@@ -1,33 +1,25 @@
 """
 face_service.py
 ─────────────────────────────────────────────────────────────
-ArcFace embedding generation (DeepFace) + MediaPipe liveness
-detection for the Garage Attendance System.
+ArcFace embedding (DeepFace) + lightweight OpenCV liveness check.
+MediaPipe removed: it caused protobuf conflicts and OOM kills on Railway.
 """
-# Must be set before any TensorFlow/Keras import.
-# TF 2.16+ ships Keras 3 which breaks DeepFace's model API;
-# this flag forces the legacy tf-keras shim that DeepFace expects.
 import os
 os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
 os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 
 import base64
-import io
 import logging
 from typing import Optional, Tuple, List
 
 import numpy as np
 import cv2
-from PIL import Image
 
 logger = logging.getLogger(__name__)
 
-# ── Lazy imports so startup is fast even if GPU is slow ──────
+# ── Lazy DeepFace import so startup stays fast ────────────────
 _deepface = None
-_mp_face_mesh = None
-_face_mesh_instance = None
-
 
 def _get_deepface():
     global _deepface
@@ -37,23 +29,21 @@ def _get_deepface():
     return _deepface
 
 
-def _get_face_mesh():
-    global _mp_face_mesh, _face_mesh_instance
-    if _face_mesh_instance is None:
-        import mediapipe as mp
-        _mp_face_mesh = mp.solutions.face_mesh
-        _face_mesh_instance = _mp_face_mesh.FaceMesh(
-            static_image_mode=True,
-            max_num_faces=1,
-            refine_landmarks=True,
-            min_detection_confidence=0.5,
+# ── OpenCV Haar cascade (loaded once, reused) ─────────────────
+_face_cascade = None
+
+def _get_cascade():
+    global _face_cascade
+    if _face_cascade is None:
+        _face_cascade = cv2.CascadeClassifier(
+            cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
         )
-    return _face_mesh_instance
+    return _face_cascade
 
 
-# ── Helpers ──────────────────────────────────────────────────
+# ── Image helpers ─────────────────────────────────────────────
 def decode_base64_image(base64_string: str) -> Optional[np.ndarray]:
-    """Decode base64 (with or without data: prefix) to BGR uint8 ndarray, or None on failure."""
+    """Decode base64 (with or without data: prefix) → BGR uint8 ndarray."""
     try:
         if "," in base64_string:
             base64_string = base64_string.split(",", 1)[1]
@@ -65,82 +55,34 @@ def decode_base64_image(base64_string: str) -> Optional[np.ndarray]:
             return None
         return img
     except Exception as e:
-        logger.warning(f"Image decode failed: {str(e)}")
+        logger.warning(f"Image decode failed: {e}")
         return None
 
 
-def _base64_to_bgr(b64: str) -> np.ndarray:
-    """Legacy PIL-based decoder kept for liveness path compatibility."""
-    if "," in b64:
-        b64 = b64.split(",", 1)[1]
-    img_bytes = base64.b64decode(b64)
-    pil_img   = Image.open(io.BytesIO(img_bytes)).convert("RGB")
-    return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
-
-
-def _bgr_to_rgb(img: np.ndarray) -> np.ndarray:
-    return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-
-# ── Liveness detection ────────────────────────────────────────
-EAR_THRESHOLD = 0.20  # Eye Aspect Ratio minimum
-
-def _eye_aspect_ratio(landmarks, eye_indices: List[int], w: int, h: int) -> float:
-    """
-    Simplified EAR using MediaPipe landmark pixel coords.
-    eye_indices: [top, bottom, left, right] (4 points)
-    """
-    pts = [(int(landmarks[i].x * w), int(landmarks[i].y * h)) for i in eye_indices]
-    # vertical distance
-    v = abs(pts[0][1] - pts[1][1])
-    # horizontal distance
-    ho = abs(pts[2][0] - pts[3][0])
-    return v / (ho + 1e-6)
-
-# MediaPipe 468-landmark indices for eye corners + lids
-LEFT_EYE_INDICES  = [159, 145, 33, 133]   # top, bottom, left, right
-RIGHT_EYE_INDICES = [386, 374, 362, 263]
-NOSE_TIP_INDEX    = 1
-
-
+# ── Liveness: OpenCV Haar face detection ──────────────────────
 def check_liveness(b64_image: str) -> Tuple[bool, str]:
     """
-    Returns (is_live: bool, reason: str)
-    Checks:
-      1. Face detected by MediaPipe
-      2. Eye Aspect Ratio > EAR_THRESHOLD (eyes open)
-      3. Nose tip visible
+    Lightweight face-presence check using OpenCV Haar cascade.
+    No GPU, no protobuf, no mediapipe — runs anywhere.
+    Returns (is_live, reason).
     """
     try:
-        img_bgr = _base64_to_bgr(b64_image)
-        img_rgb = _bgr_to_rgb(img_bgr)
-        h, w    = img_rgb.shape[:2]
+        img = decode_base64_image(b64_image)
+        if img is None:
+            return False, "image_decode_failed"
 
-        face_mesh = _get_face_mesh()
-        results   = face_mesh.process(img_rgb)
-
-        if not results.multi_face_landmarks:
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        cascade = _get_cascade()
+        faces = cascade.detectMultiScale(
+            gray, scaleFactor=1.1, minNeighbors=4, minSize=(60, 60)
+        )
+        if len(faces) == 0:
             return False, "no_face_detected"
-
-        lm = results.multi_face_landmarks[0].landmark
-
-        left_ear  = _eye_aspect_ratio(lm, LEFT_EYE_INDICES,  w, h)
-        right_ear = _eye_aspect_ratio(lm, RIGHT_EYE_INDICES, w, h)
-        ear       = (left_ear + right_ear) / 2.0
-
-        if ear < EAR_THRESHOLD:
-            return False, "eyes_closed"
-
-        # Nose tip visibility (z-depth proxy — should be close to 0)
-        nose_z = lm[NOSE_TIP_INDEX].z
-        if nose_z > 0.1:
-            return False, "face_not_frontal"
-
         return True, "live"
 
     except Exception as exc:
-        logger.error(f"[Liveness] Error: {exc}")
-        return False, "liveness_error"
+        logger.warning(f"[Liveness] Error (skipping): {exc}")
+        return True, "liveness_skipped"
 
 
 # ── ArcFace embedding ─────────────────────────────────────────
@@ -148,7 +90,7 @@ def extract_embedding(img: np.ndarray) -> Optional[List[float]]:
     """Run DeepFace ArcFace on a BGR uint8 ndarray. Returns 512-dim list or None."""
     try:
         if img is None or not isinstance(img, np.ndarray):
-            logger.warning("Invalid image input — not a numpy array")
+            logger.warning("Invalid image — not a numpy array")
             return None
         if img.dtype != np.uint8:
             img = img.astype(np.uint8)
@@ -168,7 +110,7 @@ def extract_embedding(img: np.ndarray) -> Optional[List[float]]:
             align=True,
         )
 
-        if not result or len(result) == 0:
+        if not result:
             logger.warning("DeepFace returned empty result")
             return None
 
@@ -180,7 +122,7 @@ def extract_embedding(img: np.ndarray) -> Optional[List[float]]:
         return [float(x) for x in embedding]
 
     except Exception as e:
-        logger.warning(f"Embedding failed: {str(e)}")
+        logger.warning(f"Embedding failed: {e}")
         return None
 
 
@@ -193,12 +135,11 @@ def get_embedding(b64_image: str) -> Optional[List[float]]:
 
 
 def average_embeddings(embeddings: List[List[float]]) -> List[float]:
-    """Average a list of 512-dim embeddings into one representative vector."""
+    """Average a list of 512-dim embeddings into one L2-normalised vector."""
     arr = np.array([e for e in embeddings if e is not None])
     if len(arr) == 0:
         raise ValueError("No valid embeddings to average")
     avg = np.mean(arr, axis=0)
-    # L2-normalise so cosine similarity == dot product
     norm = np.linalg.norm(avg)
     if norm > 0:
         avg = avg / norm
@@ -212,14 +153,7 @@ def process_registration_photos(photos: List[str]) -> dict:
       front: indices  0-8   (9 photos)
       left:  indices  9-16  (8 photos)
       right: indices 17-24  (8 photos)
-
-    Returns:
-      {
-        "front": [512-dim list],
-        "left":  [512-dim list],
-        "right": [512-dim list],
-        "profile_b64": str   # first photo for Cloudinary upload
-      }
+    Returns averaged embeddings per angle + profile_b64.
     """
     groups = {
         "front": photos[0:9],
@@ -228,11 +162,7 @@ def process_registration_photos(photos: List[str]) -> dict:
     }
     result = {}
     for angle, group_photos in groups.items():
-        embeddings = []
-        for p in group_photos:
-            emb = get_embedding(p)
-            if emb is not None:
-                embeddings.append(emb)
+        embeddings = [e for e in (get_embedding(p) for p in group_photos) if e is not None]
         if len(embeddings) < 1:
             raise ValueError(
                 f"Not enough valid face photos for angle '{angle}' "

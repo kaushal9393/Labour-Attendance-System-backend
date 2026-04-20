@@ -18,7 +18,6 @@ RUN pip install --no-cache-dir \
     "tensorflow-cpu==2.16.1" \
     "tf-keras==2.16.0" \
     "deepface==0.0.93" \
-    "mediapipe==0.10.9" \
     "numpy==1.26.4" \
     "opencv-python-headless>=4.10.0" \
     "pillow>=10.4.0"

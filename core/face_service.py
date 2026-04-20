@@ -108,12 +108,22 @@ def extract_embedding(img: np.ndarray) -> Optional[List[float]]:
             logger.warning("InsightFace found no face")
             return None
 
-        embedding = faces[0].embedding
+        # Pick the largest face (most prominent subject)
+        face = max(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
+
+        # Always use L2-normalised embedding for consistent cosine distance
+        embedding = face.normed_embedding if hasattr(face, "normed_embedding") else face.embedding
         if embedding is None or len(embedding) != 512:
             logger.warning(f"Unexpected embedding size: {len(embedding) if embedding is not None else 'None'}")
             return None
 
-        return [float(x) for x in embedding]
+        # Ensure L2 norm = 1 (safety net)
+        emb = np.asarray(embedding, dtype=np.float32)
+        norm = np.linalg.norm(emb)
+        if norm > 0:
+            emb = emb / norm
+
+        return [float(x) for x in emb]
 
     except Exception as e:
         logger.warning(f"Embedding failed: {e}")

@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, date, timezone
 from typing import List, Optional
 
@@ -14,9 +15,12 @@ from models.schemas import (
     MonthlyAttendanceRecord,
 )
 
+logger = logging.getLogger("garage_api.attendance")
 router = APIRouter(prefix="/api/attendance", tags=["Attendance"])
 
-COSINE_THRESHOLD = 0.80
+# InsightFace ArcFace standard: same-person cosine similarity ~0.4–0.7,
+# different-person ~0.0–0.3. 0.45 is the industry-recommended cutoff.
+COSINE_THRESHOLD = 0.45
 
 
 # ─── POST /api/attendance/scan ────────────────────────────────
@@ -46,20 +50,40 @@ async def scan_face(
     if embedding is None:
         return ScanResponse(success=False, reason="face_embedding_failed")
 
-    # 3. Query pgvector similarity function
+    # 3. Direct pgvector query — get top match across all 3 angles
+    #    cosine distance  = fv.face_vector <=> query_vec    (range 0..2)
+    #    cosine similarity = 1 - cosine_distance            (range -1..1)
     vec_str = "[" + ",".join(str(x) for x in embedding) + "]"
     row = await db.execute(
         text(
-            "SELECT employee_id, employee_name, similarity, angle_type "
-            "FROM find_matching_employee(CAST(:vec AS vector), :threshold, :cid)"
+            "SELECT e.id, e.name, fv.angle_type, "
+            "1 - (fv.face_vector <=> CAST(:vec AS vector)) AS similarity "
+            "FROM face_vectors fv "
+            "JOIN employees e ON e.id = fv.employee_id "
+            "WHERE e.company_id = :cid AND e.status != 'deleted' "
+            "ORDER BY fv.face_vector <=> CAST(:vec AS vector) ASC "
+            "LIMIT 1"
         ),
-        {"vec": vec_str, "threshold": COSINE_THRESHOLD, "cid": company_id},
+        {"vec": vec_str, "cid": company_id},
     )
     match = row.fetchone()
+
     if not match:
+        logger.info(f"[Scan] No face_vectors for company_id={company_id}")
         return ScanResponse(success=False, reason="face_not_recognized")
 
-    emp_id, emp_name, similarity, _ = match
+    emp_id, emp_name, angle_type, similarity = match
+    similarity = float(similarity)
+    logger.info(
+        f"[Scan] Top match: {emp_name} (id={emp_id}, angle={angle_type}) "
+        f"similarity={similarity:.4f} threshold={COSINE_THRESHOLD}"
+    )
+
+    if similarity < COSINE_THRESHOLD:
+        return ScanResponse(
+            success=False,
+            reason=f"face_not_recognized (top={similarity:.2f} < {COSINE_THRESHOLD})",
+        )
     now        = datetime.now(timezone.utc)
     today      = now.date()
     time_str   = now.strftime("%H:%M:%S")

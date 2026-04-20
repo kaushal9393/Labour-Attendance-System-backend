@@ -1,14 +1,11 @@
 """
 face_service.py
 ─────────────────────────────────────────────────────────────
-ArcFace embedding (DeepFace) + lightweight OpenCV liveness check.
-MediaPipe removed: it caused protobuf conflicts and OOM kills on Railway.
+ArcFace via InsightFace + ONNX Runtime (no TensorFlow).
+Replaces DeepFace/TF which OOM-killed Railway free tier (512MB limit).
+InsightFace buffalo_sc: ~170MB on disk, ~250MB RAM — fits comfortably.
 """
 import os
-os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
-os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
-os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
-
 import base64
 import logging
 from typing import Optional, Tuple, List
@@ -18,18 +15,23 @@ import cv2
 
 logger = logging.getLogger(__name__)
 
-# ── Lazy DeepFace import so startup stays fast ────────────────
-_deepface = None
+# ── Lazy InsightFace load ─────────────────────────────────────
+_insight_app = None
 
-def _get_deepface():
-    global _deepface
-    if _deepface is None:
-        from deepface import DeepFace
-        _deepface = DeepFace
-    return _deepface
+def _get_insight():
+    global _insight_app
+    if _insight_app is None:
+        from insightface.app import FaceAnalysis
+        _insight_app = FaceAnalysis(
+            name="buffalo_sc",               # small ArcFace model, 512-dim
+            providers=["CPUExecutionProvider"],
+        )
+        _insight_app.prepare(ctx_id=0, det_size=(320, 320))
+        logger.info("[InsightFace] Model loaded OK")
+    return _insight_app
 
 
-# ── OpenCV Haar cascade (loaded once, reused) ─────────────────
+# ── OpenCV Haar cascade for liveness ─────────────────────────
 _face_cascade = None
 
 def _get_cascade():
@@ -59,12 +61,11 @@ def decode_base64_image(base64_string: str) -> Optional[np.ndarray]:
         return None
 
 
-# ── Liveness: OpenCV Haar face detection ──────────────────────
+# ── Liveness: OpenCV Haar cascade ────────────────────────────
 def check_liveness(b64_image: str) -> Tuple[bool, str]:
     """
-    Lightweight face-presence check using OpenCV Haar cascade.
-    No GPU, no protobuf, no mediapipe — runs anywhere.
-    Returns (is_live, reason).
+    Lightweight face-presence check — no GPU, no protobuf.
+    Falls back to True on any error so face matching still runs.
     """
     try:
         img = decode_base64_image(b64_image)
@@ -72,8 +73,7 @@ def check_liveness(b64_image: str) -> Tuple[bool, str]:
             return False, "image_decode_failed"
 
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        cascade = _get_cascade()
-        faces = cascade.detectMultiScale(
+        faces = _get_cascade().detectMultiScale(
             gray, scaleFactor=1.1, minNeighbors=4, minSize=(60, 60)
         )
         if len(faces) == 0:
@@ -85,9 +85,9 @@ def check_liveness(b64_image: str) -> Tuple[bool, str]:
         return True, "liveness_skipped"
 
 
-# ── ArcFace embedding ─────────────────────────────────────────
+# ── ArcFace embedding via InsightFace ────────────────────────
 def extract_embedding(img: np.ndarray) -> Optional[List[float]]:
-    """Run DeepFace ArcFace on a BGR uint8 ndarray. Returns 512-dim list or None."""
+    """Run InsightFace ArcFace on BGR uint8 ndarray. Returns 512-dim list or None."""
     try:
         if img is None or not isinstance(img, np.ndarray):
             logger.warning("Invalid image — not a numpy array")
@@ -97,26 +97,20 @@ def extract_embedding(img: np.ndarray) -> Optional[List[float]]:
         if len(img.shape) != 3 or img.shape[2] != 3:
             logger.warning(f"Bad image shape: {img.shape}")
             return None
-        if img.shape[0] < 10 or img.shape[1] < 10:
+        if img.shape[0] < 20 or img.shape[1] < 20:
             logger.warning("Image too small")
             return None
 
-        DeepFace = _get_deepface()
-        result = DeepFace.represent(
-            img_path=img,
-            model_name="ArcFace",
-            detector_backend="opencv",
-            enforce_detection=False,
-            align=True,
-        )
+        app = _get_insight()
+        faces = app.get(img)
 
-        if not result:
-            logger.warning("DeepFace returned empty result")
+        if not faces:
+            logger.warning("InsightFace found no face")
             return None
 
-        embedding = result[0]["embedding"]
-        if len(embedding) != 512:
-            logger.warning(f"Unexpected embedding size: {len(embedding)}")
+        embedding = faces[0].embedding
+        if embedding is None or len(embedding) != 512:
+            logger.warning(f"Unexpected embedding size: {len(embedding) if embedding is not None else 'None'}")
             return None
 
         return [float(x) for x in embedding]
@@ -149,11 +143,8 @@ def average_embeddings(embeddings: List[List[float]]) -> List[float]:
 # ── Registration helper ───────────────────────────────────────
 def process_registration_photos(photos: List[str]) -> dict:
     """
-    Accept 25 base64 photos split by angle:
-      front: indices  0-8   (9 photos)
-      left:  indices  9-16  (8 photos)
-      right: indices 17-24  (8 photos)
-    Returns averaged embeddings per angle + profile_b64.
+    Accept 25 base64 photos (front:0-8, left:9-16, right:17-24).
+    Returns averaged ArcFace embeddings per angle + profile_b64.
     """
     groups = {
         "front": photos[0:9],

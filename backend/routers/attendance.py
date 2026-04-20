@@ -84,7 +84,7 @@ async def scan_face(
             success=False,
             reason=f"face_not_recognized (top={similarity:.2f} < {COSINE_THRESHOLD})",
         )
-    now        = datetime.now(timezone.utc)
+    now        = datetime.now(timezone.utc).replace(tzinfo=None)
     today      = now.date()
     time_str   = now.strftime("%H:%M:%S")
 
@@ -226,5 +226,4 @@ def _determine_status(now: datetime, work_start, late_mins: int) -> str:
         return "present"
     from datetime import timedelta
     cutoff = datetime.combine(now.date(), work_start) + timedelta(minutes=late_mins)
-    cutoff = cutoff.replace(tzinfo=timezone.utc)
     return "late" if now > cutoff else "present"

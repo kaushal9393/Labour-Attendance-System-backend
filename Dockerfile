@@ -19,7 +19,7 @@ RUN pip install --no-cache-dir \
     "tf-keras==2.16.0" \
     "deepface==0.0.93" \
     "mediapipe==0.10.9" \
-    "numpy>=2.0.0" \
+    "numpy==1.26.4" \
     "opencv-python-headless>=4.10.0" \
     "pillow>=10.4.0"
 

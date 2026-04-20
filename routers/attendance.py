@@ -20,13 +20,21 @@ COSINE_THRESHOLD = 0.80
 
 
 # ─── POST /api/attendance/scan ────────────────────────────────
+# No JWT required — kiosk devices are not logged in
 @router.post("/scan", response_model=ScanResponse)
 async def scan_face(
     payload: ScanRequest,
     db:      AsyncSession = Depends(get_db),
-    user:    dict         = Depends(get_current_user),
 ):
-    company_id = user["company_id"]
+    # Resolve company_id from company_code
+    company_row = await db.execute(
+        text("SELECT id FROM companies WHERE company_code = :code"),
+        {"code": payload.company_code},
+    )
+    company = company_row.fetchone()
+    if not company:
+        raise HTTPException(status_code=404, detail="Invalid company code")
+    company_id = company[0]
 
     # 1. Liveness check
     is_live, reason = check_liveness(payload.image)

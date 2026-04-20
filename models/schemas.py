@@ -62,7 +62,8 @@ class EmployeeResponse(BaseModel):
 # ATTENDANCE
 # ─────────────────────────────────────────
 class ScanRequest(BaseModel):
-    image: str  # base64 encoded image
+    image: str         # base64 encoded image
+    company_code: str  # sent by kiosk (no JWT in kiosk mode)
 
 class ScanResponse(BaseModel):
     success: bool

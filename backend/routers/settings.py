@@ -18,7 +18,9 @@ async def get_settings(
     row = await db.execute(
         text(
             "SELECT id, company_id, work_start_time, work_end_time, "
-            "late_threshold_minutes, working_days_per_week "
+            "late_threshold_minutes, working_days_per_week, "
+            "checkin_window_start, checkin_window_end, "
+            "checkout_window_start, checkout_window_end "
             "FROM settings WHERE company_id = :cid"
         ),
         {"cid": company_id},
@@ -30,6 +32,8 @@ async def get_settings(
         id=s[0], company_id=s[1],
         work_start_time=s[2], work_end_time=s[3],
         late_threshold_minutes=s[4], working_days_per_week=s[5],
+        checkin_window_start=s[6], checkin_window_end=s[7],
+        checkout_window_start=s[8], checkout_window_end=s[9],
     )
 
 
@@ -46,6 +50,10 @@ async def update_settings(
     if payload.work_end_time          is not None: updates["work_end_time"]          = payload.work_end_time
     if payload.late_threshold_minutes is not None: updates["late_threshold_minutes"] = payload.late_threshold_minutes
     if payload.working_days_per_week  is not None: updates["working_days_per_week"]  = payload.working_days_per_week
+    if payload.checkin_window_start   is not None: updates["checkin_window_start"]   = payload.checkin_window_start
+    if payload.checkin_window_end     is not None: updates["checkin_window_end"]     = payload.checkin_window_end
+    if payload.checkout_window_start  is not None: updates["checkout_window_start"]  = payload.checkout_window_start
+    if payload.checkout_window_end    is not None: updates["checkout_window_end"]    = payload.checkout_window_end
 
     if updates:
         set_clause = ", ".join(f"{k} = :{k}" for k in updates)

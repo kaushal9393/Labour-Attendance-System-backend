@@ -88,14 +88,23 @@ async def scan_face(
     today      = now.date()
     time_str   = now.strftime("%H:%M:%S")
 
-    # 4. Get company settings for late threshold
+    # 4. Get company settings for late threshold + windows
     settings_row = await db.execute(
-        text("SELECT work_start_time, late_threshold_minutes FROM settings WHERE company_id = :cid"),
+        text(
+            "SELECT work_start_time, late_threshold_minutes, "
+            "checkin_window_start, checkin_window_end, "
+            "checkout_window_start, checkout_window_end "
+            "FROM settings WHERE company_id = :cid"
+        ),
         {"cid": company_id},
     )
     settings = settings_row.fetchone()
     work_start = settings[0] if settings else None
     late_mins  = settings[1] if settings else 15
+    ci_start   = settings[2] if settings else None
+    ci_end     = settings[3] if settings else None
+    co_start   = settings[4] if settings else None
+    co_end     = settings[5] if settings else None
 
     # 5. Check existing attendance record for today
     existing = await db.execute(
@@ -106,6 +115,35 @@ async def scan_face(
         {"eid": emp_id, "today": today},
     )
     record = existing.fetchone()
+
+    # Time window enforcement
+    now_time = now.time()
+    if record is None:
+        if ci_start is not None and ci_end is not None:
+            if not (ci_start <= now_time <= ci_end):
+                return ScanResponse(
+                    success=False,
+                    match=True,
+                    action="check_in",
+                    employee_name=emp_name,
+                    reason="outside_checkin_window",
+                    message=f"Check-in allowed only between {ci_start} and {ci_end}",
+                    window_start=str(ci_start),
+                    window_end=str(ci_end),
+                )
+    else:
+        if co_start is not None and co_end is not None:
+            if not (co_start <= now_time <= co_end):
+                return ScanResponse(
+                    success=False,
+                    match=True,
+                    action="check_out",
+                    employee_name=emp_name,
+                    reason="outside_checkout_window",
+                    message=f"Check-out allowed only between {co_start} and {co_end}",
+                    window_start=str(co_start),
+                    window_end=str(co_end),
+                )
 
     if record is None:
         # ── First scan of the day → check_in

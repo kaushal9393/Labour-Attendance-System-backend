@@ -1,4 +1,5 @@
 import calendar
+import datetime
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
@@ -35,11 +36,22 @@ async def monthly_salary(
         text("SELECT working_days_per_week FROM settings WHERE company_id = :cid"),
         {"cid": company_id},
     )
-    settings = settings_row.fetchone()
-    days_per_week = settings[0] if settings else 6
+    settings_fetched = settings_row.fetchone()
+    days_per_week = settings_fetched[0] if settings_fetched else 6
 
-    # 3. Calculate working days in the month
-    working_days = _count_working_days(year, month, days_per_week)
+    # 3. Only count working days up to today (not the full month if current)
+    today = datetime.date.today()
+    if month == today.month and year == today.year:
+        count_till = today
+    else:
+        last_day = calendar.monthrange(year, month)[1]
+        count_till = datetime.date(year, month, last_day)
+
+    working_days = _count_working_days(
+        start=datetime.date(year, month, 1),
+        end=count_till,
+        days_per_week=days_per_week,
+    )
 
     # 4. Count attendance
     att_row = await db.execute(
@@ -57,12 +69,17 @@ async def monthly_salary(
     att = att_row.fetchone()
     present_days = int(att[0]) if att else 0
     late_days    = int(att[1]) if att else 0
-    absent_days  = max(0, working_days - present_days)
+    absent_days  = max(0, working_days - present_days - late_days)
 
     # 5. Salary math
-    per_day_salary   = float(monthly_salary) / working_days if working_days > 0 else 0
-    deduction_amount = absent_days * per_day_salary
-    net_pay          = float(monthly_salary) - deduction_amount
+    total_month_working_days = _count_working_days(
+        start=datetime.date(year, month, 1),
+        end=datetime.date(year, month, calendar.monthrange(year, month)[1]),
+        days_per_week=days_per_week,
+    )
+    per_day_salary   = float(monthly_salary) / total_month_working_days if total_month_working_days > 0 else 0
+    net_pay          = (present_days + late_days) * per_day_salary
+    deduction_amount = float(monthly_salary) - net_pay
 
     # 6. Upsert salary record
     await db.execute(
@@ -101,22 +118,15 @@ async def monthly_salary(
     )
 
 
-def _count_working_days(year: int, month: int, days_per_week: int) -> int:
-    """
-    Count working days in a month.
-    days_per_week=6 → Mon-Sat (exclude Sunday = weekday 6)
-    days_per_week=5 → Mon-Fri (exclude Sat=5, Sun=6)
-    """
-    _, total_days = calendar.monthrange(year, month)
-    exclude = []
-    if days_per_week == 6:
-        exclude = [6]          # Sunday
-    elif days_per_week == 5:
-        exclude = [5, 6]       # Sat + Sun
-
+def _count_working_days(start: datetime.date, end: datetime.date, days_per_week: int) -> int:
     count = 0
-    for day in range(1, total_days + 1):
-        wd = calendar.weekday(year, month, day)
-        if wd not in exclude:
-            count += 1
+    current = start
+    while current <= end:
+        if days_per_week == 6:
+            if current.weekday() != 6:
+                count += 1
+        else:
+            if current.weekday() < 5:
+                count += 1
+        current += datetime.timedelta(days=1)
     return count

@@ -72,6 +72,10 @@ class ScanResponse(BaseModel):
     action: Optional[str] = None       # "check_in" | "check_out"
     match_score: Optional[float] = None
     reason: Optional[str] = None       # error reason if success=False
+    match: Optional[bool] = None
+    message: Optional[str] = None
+    window_start: Optional[str] = None
+    window_end: Optional[str] = None
 
 class AttendanceRecord(BaseModel):
     id: int
@@ -143,6 +147,10 @@ class SettingsResponse(BaseModel):
     work_end_time: time
     late_threshold_minutes: int
     working_days_per_week: int
+    checkin_window_start: Optional[time] = None
+    checkin_window_end: Optional[time] = None
+    checkout_window_start: Optional[time] = None
+    checkout_window_end: Optional[time] = None
 
     class Config:
         from_attributes = True
@@ -152,6 +160,10 @@ class SettingsUpdate(BaseModel):
     work_end_time: Optional[time] = None
     late_threshold_minutes: Optional[int] = None
     working_days_per_week: Optional[int] = None
+    checkin_window_start: Optional[time] = None
+    checkin_window_end: Optional[time] = None
+    checkout_window_start: Optional[time] = None
+    checkout_window_end: Optional[time] = None
 
 
 # ─────────────────────────────────────────

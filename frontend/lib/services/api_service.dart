@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:image/image.dart' as img;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/constants.dart';
 
@@ -44,8 +46,32 @@ class ApiService {
   // ── Employees ───────────────────────────────────────────────
   Future<Response> getEmployees() => _dio.get('/employees');
 
-  Future<Response> registerEmployee(Map<String, dynamic> body) =>
-      _dio.post('/employees/register', data: body);
+  Future<Response> registerEmployee(Map<String, dynamic> body) {
+    // Compress every photo to max 480x480 @ 75% JPEG before upload
+    if (body['photos'] is List) {
+      final raw = (body['photos'] as List).cast<String>();
+      body = Map<String, dynamic>.from(body);
+      body['photos'] = raw.map(_compressBase64Photo).toList();
+    }
+    return _dio.post('/employees/register', data: body);
+  }
+
+  static String _compressBase64Photo(String b64) {
+    try {
+      final bytes = base64Decode(b64);
+      final decoded = img.decodeImage(bytes);
+      if (decoded == null) return b64;
+      // Skip if already smaller than target
+      final needsResize = decoded.width > 480 || decoded.height > 480;
+      final resized = needsResize
+          ? img.copyResize(decoded, width: 480, height: 480)
+          : decoded;
+      final jpeg = img.encodeJpg(resized, quality: 75);
+      return base64Encode(jpeg);
+    } catch (_) {
+      return b64;
+    }
+  }
 
   Future<Response> updateEmployee(int id, Map<String, dynamic> body) =>
       _dio.put('/employees/$id', data: body);

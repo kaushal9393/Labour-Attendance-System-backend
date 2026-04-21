@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
+import 'package:dio/dio.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
 
@@ -36,6 +37,15 @@ class _EmployeeRegistrationScreenState
   bool _submitting    = false;
   final List<String> _photos = [];
   Timer? _autoTimer;
+
+  // ── Submission status overlay ─────────────────────────────
+  int _statusIndex = 0;
+  Timer? _statusTimer;
+  static const List<String> _statusMessages = [
+    'Uploading photos...',
+    'Analyzing face data...',
+    'Saving employee profile...',
+  ];
 
   // ── Animation for face ring ─────────────────────────────────
   late AnimationController _pulseCtrl;
@@ -114,8 +124,17 @@ class _EmployeeRegistrationScreenState
       final xFile = await _camera!.takePicture();
       final bytes = await xFile.readAsBytes();
 
-      // Resize to 320×320 and compress to reduce payload size (~10KB per photo)
+      // Resize to 320x320 and compress to reduce payload size (~10KB per photo)
       final b64 = await _compressToBase64(bytes);
+
+      // Validate the image has sufficient size before accepting
+      if (b64.length < 2000) {
+        if (mounted) {
+           _showSnack('Face not captured properly or image too small. Try again.');
+           setState(() => _capturing = false);
+        }
+        return;
+      }
 
       if (!mounted) return;
       setState(() {
@@ -152,7 +171,17 @@ class _EmployeeRegistrationScreenState
       _showSnack('Please select a joining date');
       return;
     }
-    setState(() => _submitting = true);
+    setState(() {
+      _submitting = true;
+      _statusIndex = 0;
+    });
+    _statusTimer?.cancel();
+    _statusTimer = Timer.periodic(const Duration(seconds: 6), (_) {
+      if (!mounted) return;
+      setState(() {
+        _statusIndex = (_statusIndex + 1) % _statusMessages.length;
+      });
+    });
     try {
       await ApiService().registerEmployee({
         'name':           _nameCtrl.text.trim(),
@@ -174,8 +203,15 @@ class _EmployeeRegistrationScreenState
         context.go('/kiosk/admin');
       }
     } catch (e) {
-      setState(() => _submitting = false);
-      _showSnack('Registration failed: ${e.toString()}');
+      if (mounted) setState(() => _submitting = false);
+      String errorMsg = e.toString();
+      if (e is DioException && e.response?.data != null) {
+        final data = e.response!.data;
+        if (data is Map) {
+          errorMsg = data['detail'] ?? data['message'] ?? e.toString();
+        }
+      }
+      _showSnack('Registration failed: $errorMsg');
     }
   }
 

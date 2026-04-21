@@ -8,6 +8,8 @@ InsightFace buffalo_sc: ~170MB on disk, ~250MB RAM — fits comfortably.
 import os
 import base64
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Tuple, List
 
 import numpy as np
@@ -15,20 +17,36 @@ import cv2
 
 logger = logging.getLogger(__name__)
 
-# ── Lazy InsightFace load ─────────────────────────────────────
+# ── Singleton InsightFace model (loaded once, reused forever) ─
 _insight_app = None
+_model_lock = threading.Lock()
 
 def _get_insight():
     global _insight_app
     if _insight_app is None:
-        from insightface.app import FaceAnalysis
-        _insight_app = FaceAnalysis(
-            name="buffalo_sc",               # small ArcFace model, 512-dim
-            providers=["CPUExecutionProvider"],
-        )
-        _insight_app.prepare(ctx_id=0, det_size=(320, 320))
-        logger.info("[InsightFace] Model loaded OK")
+        with _model_lock:
+            if _insight_app is None:
+                from insightface.app import FaceAnalysis
+                app = FaceAnalysis(
+                    name="buffalo_sc",               # small ArcFace model, 512-dim
+                    providers=["CPUExecutionProvider"],
+                )
+                app.prepare(ctx_id=0, det_size=(320, 320))
+                _insight_app = app
+                logger.info("[InsightFace] Model loaded OK")
     return _insight_app
+
+
+def warmup_models() -> None:
+    """Call once on app startup to load InsightFace + Haar cascade into memory."""
+    try:
+        app = _get_insight()
+        dummy = np.zeros((160, 160, 3), dtype=np.uint8)
+        app.get(dummy)  # force ONNX session init
+        _get_cascade()
+        logger.info("✅ Face models warmed up and cached in memory")
+    except Exception as e:
+        logger.warning(f"⚠️ Warmup failed: {e}")
 
 
 # ── OpenCV Haar cascade for liveness ─────────────────────────
@@ -161,15 +179,25 @@ def process_registration_photos(photos: List[str]) -> dict:
         "left":  photos[9:17],
         "right": photos[17:25],
     }
+
+    # Warm the singleton once before spawning workers (avoids thundering herd on first load)
+    _get_insight()
+
     result = {}
-    for angle, group_photos in groups.items():
-        embeddings = [e for e in (get_embedding(p) for p in group_photos) if e is not None]
-        if len(embeddings) < 1:
-            raise ValueError(
-                f"Not enough valid face photos for angle '{angle}' "
-                f"(got {len(embeddings)}/min 1)"
-            )
-        result[angle] = average_embeddings(embeddings)
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        angle_to_future_list = {
+            angle: [executor.submit(get_embedding, p) for p in group]
+            for angle, group in groups.items()
+        }
+        for angle, futures in angle_to_future_list.items():
+            embeddings = [f.result() for f in futures]
+            embeddings = [e for e in embeddings if e is not None]
+            if len(embeddings) < 1:
+                raise ValueError(
+                    f"Not enough valid face photos for angle '{angle}' "
+                    f"(got {len(embeddings)}/min 1)"
+                )
+            result[angle] = average_embeddings(embeddings)
 
     result["profile_b64"] = photos[0]
     return result

@@ -12,7 +12,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
+import asyncio
+
 from core.database import ping_db
+from core.face_service import warmup_models
 from routers import auth, employees, attendance, salary, reports, settings as settings_router
 
 load_dotenv()
@@ -33,6 +36,12 @@ async def lifespan(app: FastAPI):
         logger.info("✅ Database connected")
     else:
         logger.warning("⚠️  Database connection failed — check DATABASE_URL")
+
+    # Preload face recognition models so first request is fast
+    logger.info("🔄 Warming up face recognition models…")
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, warmup_models)
+    logger.info("✅ Face models ready")
     yield
     # ── Shutdown ──
     logger.info("Shutting down…")

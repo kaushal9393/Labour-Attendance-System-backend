@@ -31,7 +31,7 @@ def _get_insight():
                     name="buffalo_sc",               # small ArcFace model, 512-dim
                     providers=["CPUExecutionProvider"],
                 )
-                app.prepare(ctx_id=0, det_size=(320, 320))
+                app.prepare(ctx_id=0, det_size=(160, 160))
                 _insight_app = app
                 logger.info("[InsightFace] Model loaded OK")
     return _insight_app

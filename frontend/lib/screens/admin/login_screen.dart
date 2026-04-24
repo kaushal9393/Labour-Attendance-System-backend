@@ -18,7 +18,49 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _companyCtrl = TextEditingController();
   final _emailCtrl   = TextEditingController();
   final _passCtrl    = TextEditingController();
-  bool  _obscure     = true;
+  bool  _obscure              = true;
+  bool  _rememberMe           = false;
+  bool  _hasSavedCredentials  = false;
+
+  static const String _kCompany = 'saved_company_code';
+  static const String _kEmail   = 'saved_email';
+  static const String _kPass    = 'saved_password';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedCredentials();
+  }
+
+  Future<void> _loadSavedCredentials() async {
+    final prefs   = await SharedPreferences.getInstance();
+    final company = prefs.getString(_kCompany);
+    final email   = prefs.getString(_kEmail);
+    final pass    = prefs.getString(_kPass);
+    if (company != null && email != null && pass != null) {
+      setState(() {
+        _companyCtrl.text      = company;
+        _emailCtrl.text        = email;
+        _passCtrl.text         = pass;
+        _rememberMe            = true;
+        _hasSavedCredentials   = true;
+      });
+    }
+  }
+
+  Future<void> _clearSavedCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kCompany);
+    await prefs.remove(_kEmail);
+    await prefs.remove(_kPass);
+    setState(() {
+      _companyCtrl.clear();
+      _emailCtrl.clear();
+      _passCtrl.clear();
+      _rememberMe           = false;
+      _hasSavedCredentials  = false;
+    });
+  }
 
   @override
   void dispose() {
@@ -35,7 +77,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           email:       _emailCtrl.text.trim(),
           password:    _passCtrl.text,
         );
-    if (success && mounted) context.go('/admin/dashboard');
+    if (!mounted) return;
+    if (success) {
+      final prefs = await SharedPreferences.getInstance();
+      if (_rememberMe) {
+        await prefs.setString(_kCompany, _companyCtrl.text.trim());
+        await prefs.setString(_kEmail,   _emailCtrl.text.trim());
+        await prefs.setString(_kPass,    _passCtrl.text);
+      } else {
+        await prefs.remove(_kCompany);
+        await prefs.remove(_kEmail);
+        await prefs.remove(_kPass);
+      }
+      if (mounted) context.go('/admin/dashboard');
+    }
   }
 
   @override
@@ -138,6 +193,38 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                     validator: (v) =>
                         v == null || v.isEmpty ? 'Enter password' : null,
+                  ),
+                  const SizedBox(height: 4),
+
+                  // Remember me row
+                  Row(
+                    children: [
+                      Checkbox(
+                        value: _rememberMe,
+                        activeColor: AppTheme.accent,
+                        onChanged: (v) =>
+                            setState(() => _rememberMe = v ?? false),
+                      ),
+                      const Text(
+                        'Remember login details',
+                        style: TextStyle(
+                            color: AppTheme.textSecondary, fontSize: 13),
+                      ),
+                      if (_hasSavedCredentials) ...[
+                        const Spacer(),
+                        TextButton(
+                          onPressed: _clearSavedCredentials,
+                          style: TextButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              minimumSize: const Size(0, 32)),
+                          child: const Text(
+                            'Clear saved',
+                            style: TextStyle(
+                                color: AppTheme.error, fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ]),
               ),

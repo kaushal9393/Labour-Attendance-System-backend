@@ -223,6 +223,7 @@ class _EmployeeRegistrationScreenState
   @override
   void dispose() {
     _autoTimer?.cancel();
+    _statusTimer?.cancel();
     _camera?.dispose();
     _nameCtrl.dispose();
     _phoneCtrl.dispose();
@@ -259,13 +260,68 @@ class _EmployeeRegistrationScreenState
           },
         ),
       ),
-      body: PageView(
-        controller: _pageCtrl,
-        physics: const NeverScrollableScrollPhysics(),
+      body: Stack(
         children: [
-          _buildPhotoStep(),
-          _buildDetailsStep(),
+          PageView(
+            controller: _pageCtrl,
+            physics: const NeverScrollableScrollPhysics(),
+            children: [
+              _buildPhotoStep(),
+              _buildDetailsStep(),
+            ],
+          ),
+          if (_submitting) _buildSubmittingOverlay(),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSubmittingOverlay() {
+    return Container(
+      color: Colors.black.withValues(alpha: 0.87),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 36),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(
+                width: 56,
+                height: 56,
+                child: CircularProgressIndicator(
+                  color: AppTheme.accent,
+                  strokeWidth: 3,
+                ),
+              ),
+              const SizedBox(height: 28),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 400),
+                child: Text(
+                  _statusMessages[_statusIndex],
+                  key: ValueKey(_statusIndex),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'This may take 15–20 seconds',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppTheme.textSecondary, fontSize: 14),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Please do not close the app',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -619,19 +675,7 @@ class _EmployeeRegistrationScreenState
           const SizedBox(height: 32),
           ElevatedButton(
             onPressed: _submitting ? null : _submit,
-            child: _submitting
-                ? const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      SizedBox(
-                        width: 20, height: 20,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white)),
-                      SizedBox(width: 12),
-                      Text('Registering…'),
-                    ],
-                  )
-                : const Text('Register Employee'),
+            child: const Text('Register Employee'),
           ),
           const SizedBox(height: 40),
         ]),

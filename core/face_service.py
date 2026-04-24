@@ -5,9 +5,10 @@ ArcFace via InsightFace + ONNX Runtime (no TensorFlow).
 Replaces DeepFace/TF which OOM-killed Railway free tier (512MB limit).
 InsightFace buffalo_sc: ~170MB on disk, ~250MB RAM — fits comfortably.
 """
-import os
 import base64
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, Tuple, List
 
 import numpy as np
@@ -15,32 +16,53 @@ import cv2
 
 logger = logging.getLogger(__name__)
 
-# ── Lazy InsightFace load ─────────────────────────────────────
+# ── Thread-safe InsightFace singleton ─────────────────────────
 _insight_app = None
+_insight_lock = threading.Lock()
 
 def _get_insight():
     global _insight_app
     if _insight_app is None:
-        from insightface.app import FaceAnalysis
-        _insight_app = FaceAnalysis(
-            name="buffalo_sc",               # small ArcFace model, 512-dim
-            providers=["CPUExecutionProvider"],
-        )
-        _insight_app.prepare(ctx_id=0, det_size=(320, 320))
-        logger.info("[InsightFace] Model loaded OK")
+        with _insight_lock:
+            if _insight_app is None:  # double-checked locking
+                from insightface.app import FaceAnalysis
+                _insight_app = FaceAnalysis(
+                    name="buffalo_sc",
+                    providers=["CPUExecutionProvider"],
+                )
+                _insight_app.prepare(ctx_id=0, det_size=(320, 320))
+                logger.info("[InsightFace] Model loaded OK")
     return _insight_app
 
 
-# ── OpenCV Haar cascade for liveness ─────────────────────────
+# ── Thread-safe OpenCV Haar cascade ──────────────────────────
 _face_cascade = None
+_cascade_lock = threading.Lock()
 
 def _get_cascade():
     global _face_cascade
     if _face_cascade is None:
-        _face_cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-        )
+        with _cascade_lock:
+            if _face_cascade is None:
+                _face_cascade = cv2.CascadeClassifier(
+                    cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+                )
     return _face_cascade
+
+
+# ── Startup warmup ────────────────────────────────────────────
+def warmup_models() -> bool:
+    """Pre-load all models into memory. Call at app startup."""
+    try:
+        logger.info("[Warmup] Loading InsightFace ArcFace model…")
+        _get_insight()
+        logger.info("[Warmup] Loading Haar cascade…")
+        _get_cascade()
+        logger.info("[Warmup] All models ready ✅")
+        return True
+    except Exception as exc:
+        logger.warning(f"[Warmup] Failed: {exc}")
+        return False
 
 
 # ── Image helpers ─────────────────────────────────────────────
@@ -151,25 +173,35 @@ def average_embeddings(embeddings: List[List[float]]) -> List[float]:
 
 
 # ── Registration helper ───────────────────────────────────────
+def _process_angle(angle_and_photos: tuple) -> tuple:
+    """Worker: compute averaged embedding for one angle group."""
+    angle, group_photos = angle_and_photos
+    embeddings = [e for e in (get_embedding(p) for p in group_photos) if e is not None]
+    if len(embeddings) < 1:
+        raise ValueError(
+            f"Not enough valid face photos for angle '{angle}' "
+            f"(got {len(embeddings)}/min 1)"
+        )
+    return angle, average_embeddings(embeddings)
+
+
 def process_registration_photos(photos: List[str]) -> dict:
     """
     Accept 25 base64 photos (front:0-8, left:9-16, right:17-24).
+    Processes all 3 angle groups in parallel with ThreadPoolExecutor.
     Returns averaged ArcFace embeddings per angle + profile_b64.
     """
-    groups = {
-        "front": photos[0:9],
-        "left":  photos[9:17],
-        "right": photos[17:25],
-    }
+    groups = [
+        ("front", photos[0:9]),
+        ("left",  photos[9:17]),
+        ("right", photos[17:25]),
+    ]
     result = {}
-    for angle, group_photos in groups.items():
-        embeddings = [e for e in (get_embedding(p) for p in group_photos) if e is not None]
-        if len(embeddings) < 1:
-            raise ValueError(
-                f"Not enough valid face photos for angle '{angle}' "
-                f"(got {len(embeddings)}/min 1)"
-            )
-        result[angle] = average_embeddings(embeddings)
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = {executor.submit(_process_angle, item): item[0] for item in groups}
+        for future in as_completed(futures):
+            angle, embedding = future.result()  # raises ValueError on failure
+            result[angle] = embedding
 
     result["profile_b64"] = photos[0]
     return result

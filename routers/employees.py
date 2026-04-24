@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
@@ -46,9 +48,12 @@ async def register_employee(
 ):
     company_id = user["company_id"]
 
-    # 1. Generate ArcFace embeddings from 25 photos
+    # 1. Generate ArcFace embeddings from 25 photos (CPU-bound — run in thread)
     try:
-        face_data = process_registration_photos(payload.photos)
+        loop = asyncio.get_event_loop()
+        face_data = await loop.run_in_executor(
+            None, process_registration_photos, payload.photos
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

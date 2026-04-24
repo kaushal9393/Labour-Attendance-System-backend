@@ -159,9 +159,9 @@ async def delete_employee(
 ):
     company_id = user["company_id"]
     await db.execute(
-        text("UPDATE employees SET status = 'inactive' WHERE id = :eid AND company_id = :cid"),
+        text("UPDATE employees SET status = 'deleted' WHERE id = :eid AND company_id = :cid"),
         {"eid": employee_id, "cid": company_id},
     )
     await db.commit()
     cache.invalidate(f"employees_list_{company_id}")
-    return MessageResponse(message="Employee deactivated")
+    return MessageResponse(message="Employee deleted")

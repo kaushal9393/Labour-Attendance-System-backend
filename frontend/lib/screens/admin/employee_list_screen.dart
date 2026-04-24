@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../models/employee.dart';
 import '../../providers/employee_provider.dart';
+import '../../services/api_service.dart';
 import '../../widgets/shimmer_loader.dart';
 import '../../widgets/error_view.dart';
 
@@ -102,87 +103,147 @@ class EmployeeListScreen extends ConsumerWidget {
   }
 }
 
-class _EmployeeCard extends StatelessWidget {
+class _EmployeeCard extends ConsumerStatefulWidget {
   final Employee employee;
   const _EmployeeCard({required this.employee});
 
   @override
+  ConsumerState<_EmployeeCard> createState() => _EmployeeCardState();
+}
+
+class _EmployeeCardState extends ConsumerState<_EmployeeCard> {
+
+  void _onDeleteTap() {
+    // Use postFrameCallback so dialog opens after current frame/gesture is done
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          backgroundColor: AppTheme.surface,
+          title: const Text('Delete Employee',
+              style: TextStyle(color: AppTheme.textPrimary)),
+          content: Text(
+            'Are you sure you want to delete "${widget.employee.name}"?',
+            style: const TextStyle(color: AppTheme.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context, rootNavigator: true).pop(false),
+              child: const Text('Cancel',
+                  style: TextStyle(color: AppTheme.textSecondary)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context, rootNavigator: true).pop(true),
+              child:
+                  const Text('Delete', style: TextStyle(color: AppTheme.error)),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+      // Optimistic: refresh list immediately, then call API in background
+      ref.invalidate(employeesProvider);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text('${widget.employee.name} deleted'),
+            backgroundColor: AppTheme.error),
+      );
+      ApiService().deleteEmployee(widget.employee.id).catchError((e) {
+        ref.invalidate(employeesProvider);
+        throw e;
+      });
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final employee = widget.employee;
     final isActive = employee.status == 'active';
+
     return GestureDetector(
       onTap: () => context.push('/employee-report', extra: employee),
       child: Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppTheme.cardBg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-            color: (isActive ? AppTheme.accent : AppTheme.error)
-                .withValues(alpha: 0.2)),
-      ),
-      child: Row(children: [
-        // Avatar
-        CircleAvatar(
-          radius: 26,
-          backgroundColor: AppTheme.surface,
-          backgroundImage: employee.profilePhotoUrl != null
-              ? CachedNetworkImageProvider(employee.profilePhotoUrl!)
-              : null,
-          child: employee.profilePhotoUrl == null
-              ? Text(employee.name[0].toUpperCase(),
-                  style: const TextStyle(
-                      color: AppTheme.accent,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold))
-              : null,
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(employee.name,
-                style: const TextStyle(
-                    color: AppTheme.textPrimary,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 15)),
-            const SizedBox(height: 3),
-            if (employee.phone != null)
-              Text(employee.phone!,
-                  style: const TextStyle(
-                      color: AppTheme.textSecondary, fontSize: 12)),
-            Text(
-              'Joined ${DateFormat('dd MMM yyyy').format(DateTime.parse(employee.joiningDate))}',
-              style: const TextStyle(
-                  color: AppTheme.textSecondary, fontSize: 12),
-            ),
-          ]),
-        ),
-        Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Text(
-            '₹${NumberFormat('#,##,###').format(employee.monthlyScalary)}',
-            style: const TextStyle(
-                color: AppTheme.accent,
-                fontWeight: FontWeight.w700,
-                fontSize: 15),
-          ),
-          const SizedBox(height: 4),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppTheme.cardBg,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
               color: (isActive ? AppTheme.accent : AppTheme.error)
-                  .withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              employee.status.toUpperCase(),
-              style: TextStyle(
-                  color: isActive ? AppTheme.accent : AppTheme.error,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700),
-            ),
+                  .withValues(alpha: 0.2)),
+        ),
+        child: Row(children: [
+          CircleAvatar(
+            radius: 26,
+            backgroundColor: AppTheme.surface,
+            backgroundImage: employee.profilePhotoUrl != null
+                ? CachedNetworkImageProvider(employee.profilePhotoUrl!)
+                : null,
+            child: employee.profilePhotoUrl == null
+                ? Text(employee.name[0].toUpperCase(),
+                    style: const TextStyle(
+                        color: AppTheme.accent,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold))
+                : null,
           ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(employee.name,
+                      style: const TextStyle(
+                          color: AppTheme.textPrimary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15)),
+                  const SizedBox(height: 3),
+                  if (employee.phone != null)
+                    Text(employee.phone!,
+                        style: const TextStyle(
+                            color: AppTheme.textSecondary, fontSize: 12)),
+                  Text(
+                    'Joined ${DateFormat('dd MMM yyyy').format(DateTime.parse(employee.joiningDate))}',
+                    style: const TextStyle(
+                        color: AppTheme.textSecondary, fontSize: 12),
+                  ),
+                ]),
+          ),
+          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Text(
+              '₹${NumberFormat('#,##,###').format(employee.monthlyScalary)}',
+              style: const TextStyle(
+                  color: AppTheme.accent,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15),
+            ),
+            const SizedBox(height: 4),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: (isActive ? AppTheme.accent : AppTheme.error)
+                    .withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                employee.status.toUpperCase(),
+                style: TextStyle(
+                    color: isActive ? AppTheme.accent : AppTheme.error,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700),
+              ),
+            ),
+            const SizedBox(height: 4),
+            IconButton(
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    icon: const Icon(Icons.delete_outline,
+                        color: AppTheme.error, size: 20),
+                    onPressed: _onDeleteTap,
+                  ),
+          ]),
         ]),
-      ]),
       ),
     );
   }

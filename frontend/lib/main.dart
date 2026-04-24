@@ -47,7 +47,11 @@ Future<void> main() async {
   // Init cache, API service, and local notifications
   await CacheService.init();
   ApiService().init();
-  await NotificationService().init();
+  try {
+    await NotificationService().init();
+  } catch (_) {
+    // Notification setup failed (e.g. exact alarm permission denied) — app still works
+  }
 
   // Prefetch common data in background — don't await
   ApiService.prefetchAll();

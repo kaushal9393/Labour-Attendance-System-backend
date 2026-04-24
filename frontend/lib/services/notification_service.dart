@@ -44,22 +44,19 @@ class NotificationService {
   /// Schedules a daily local notification at 17:00 (5 PM) in the device's
   /// local timezone reminding employees to check out before 7 PM.
   Future<void> scheduleDailyCheckoutReminder() async {
-    // Cancel any existing scheduled reminder first
     await _plugin.cancel(_checkoutNotifId);
 
     final localTimezone = tz.local;
     final now = tz.TZDateTime.now(localTimezone);
 
-    // Next 17:00 in local time
     var scheduled = tz.TZDateTime(
       localTimezone,
       now.year,
       now.month,
       now.day,
-      17, // 5 PM
+      17,
       0,
     );
-    // If 5 PM has already passed today, schedule for tomorrow
     if (scheduled.isBefore(now)) {
       scheduled = scheduled.add(const Duration(days: 1));
     }
@@ -83,17 +80,33 @@ class NotificationService {
       iOS: iosDetails,
     );
 
-    await _plugin.zonedSchedule(
-      _checkoutNotifId,
-      'Time to Check Out!',
-      'Checkout window is open: 5:00 PM – 7:00 PM. Scan your face at the kiosk.',
-      scheduled,
-      details,
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-      matchDateTimeComponents: DateTimeComponents.time, // repeat daily
-    );
+    // Try exact alarm first; fall back to inexact if permission is denied
+    // (Android 12+ requires SCHEDULE_EXACT_ALARM or USE_EXACT_ALARM).
+    try {
+      await _plugin.zonedSchedule(
+        _checkoutNotifId,
+        'Time to Check Out!',
+        'Checkout window is open: 5:00 PM – 7:00 PM. Scan your face at the kiosk.',
+        scheduled,
+        details,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        matchDateTimeComponents: DateTimeComponents.time,
+      );
+    } catch (_) {
+      await _plugin.zonedSchedule(
+        _checkoutNotifId,
+        'Time to Check Out!',
+        'Checkout window is open: 5:00 PM – 7:00 PM. Scan your face at the kiosk.',
+        scheduled,
+        details,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        matchDateTimeComponents: DateTimeComponents.time,
+      );
+    }
   }
 
   /// Show an immediate test notification (useful to verify setup).

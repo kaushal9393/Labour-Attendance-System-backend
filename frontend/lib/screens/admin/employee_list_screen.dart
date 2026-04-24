@@ -6,7 +6,6 @@ import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../models/employee.dart';
 import '../../providers/employee_provider.dart';
-import '../../services/api_service.dart';
 import '../../widgets/shimmer_loader.dart';
 import '../../widgets/error_view.dart';
 
@@ -25,7 +24,7 @@ class EmployeeListScreen extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: () => ref.invalidate(employeesProvider),
+            onPressed: () => ref.read(employeesProvider.notifier).load(),
           ),
         ],
       ),
@@ -36,14 +35,14 @@ class EmployeeListScreen extends ConsumerWidget {
         label: const Text('Add Employee'),
         onPressed: () async {
           await context.push('/admin/register');
-          ref.invalidate(employeesProvider);
+          ref.read(employeesProvider.notifier).load();
         },
       ),
       body: empAsync.when(
         loading: () => const ShimmerList(),
         error: (e, _) => ErrorView(
             message: e.toString(),
-            onRetry: () => ref.invalidate(employeesProvider)),
+            onRetry: () => ref.read(employeesProvider.notifier).load()),
         data: (employees) {
           if (employees.isEmpty) {
             return Center(
@@ -82,7 +81,7 @@ class EmployeeListScreen extends ConsumerWidget {
                       label: const Text('Add First Employee'),
                       onPressed: () async {
                         await context.push('/admin/register');
-                        ref.invalidate(employeesProvider);
+                        ref.read(employeesProvider.notifier).load();
                       },
                     ),
                   ],
@@ -142,17 +141,12 @@ class _EmployeeCardState extends ConsumerState<_EmployeeCard> {
         ),
       );
       if (confirmed != true || !mounted) return;
-      // Optimistic: refresh list immediately, then call API in background
-      ref.invalidate(employeesProvider);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('${widget.employee.name} deleted'),
-            backgroundColor: AppTheme.error),
+      final messenger = ScaffoldMessenger.of(context);
+      final name = widget.employee.name;
+      await ref.read(employeesProvider.notifier).deleteOptimistic(widget.employee.id);
+      messenger.showSnackBar(
+        SnackBar(content: Text('$name deleted'), backgroundColor: AppTheme.error),
       );
-      ApiService().deleteEmployee(widget.employee.id).catchError((e) {
-        ref.invalidate(employeesProvider);
-        throw e;
-      });
     });
   }
 

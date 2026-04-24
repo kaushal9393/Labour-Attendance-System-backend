@@ -55,20 +55,34 @@ class _EmployeeRegistrationScreenState
   int _step = 0;
   final _pageCtrl = PageController();
 
-  static const int _totalPhotos = 25;
+  static const int _totalPhotos = 9;
 
-  // angle labels and photo boundaries
+  // angle labels and photo boundaries (3 photos per angle)
   static const List<String> _angleInstructions = [
     'Look straight at the camera',
     'Slowly turn your head LEFT',
     'Slowly turn your head RIGHT',
   ];
-  static const List<int> _angleBoundaries = [9, 17, 25];
+  static const List<int> _angleBoundaries = [3, 6, 9];
 
   int get _currentAngle {
-    if (_photos.length < 9)  return 0;
-    if (_photos.length < 17) return 1;
+    if (_photos.length < 3) return 0;
+    if (_photos.length < 6) return 1;
     return 2;
+  }
+
+  /// Backend still requires 25 photos — pad each angle group to match old API.
+  List<String> get _photosForApi {
+    if (_photos.length < 9) return _photos;
+    final front = _photos.sublist(0, 3);
+    final left  = _photos.sublist(3, 6);
+    final right = _photos.sublist(6, 9);
+    // Repeat each angle group to reach 25 total: front×9, left×8, right×8
+    return [
+      ...List.generate(9, (i) => front[i % 3]),
+      ...List.generate(8, (i) => left[i % 3]),
+      ...List.generate(8, (i) => right[i % 3]),
+    ];
   }
 
   String get _angleLabel => ['FRONT', 'LEFT 30°', 'RIGHT 30°'][_currentAngle];
@@ -188,7 +202,7 @@ class _EmployeeRegistrationScreenState
         'phone':          _phoneCtrl.text.trim(),
         'monthly_salary': double.parse(_salaryCtrl.text.trim()),
         'joining_date':   DateFormat('yyyy-MM-dd').format(_joiningDate!),
-        'photos':         _photos,
+        'photos':         _photosForApi,
       });
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -208,7 +222,12 @@ class _EmployeeRegistrationScreenState
       if (e is DioException && e.response?.data != null) {
         final data = e.response!.data;
         if (data is Map) {
-          errorMsg = data['detail'] ?? data['message'] ?? e.toString();
+          final detail = data['detail'];
+          if (detail is List) {
+            errorMsg = detail.map((e) => e['msg'] ?? e.toString()).join(', ');
+          } else {
+            errorMsg = detail?.toString() ?? data['message']?.toString() ?? e.toString();
+          }
         }
       }
       _showSnack('Registration failed: $errorMsg');
@@ -578,7 +597,7 @@ class _EmployeeRegistrationScreenState
                   color: AppTheme.accent, size: 24),
               SizedBox(width: 10),
               Expanded(
-                child: Text('25 face photos captured — great!',
+                child: Text('9 face photos captured — great!',
                     style: TextStyle(
                         color: AppTheme.accent,
                         fontWeight: FontWeight.w600,
@@ -745,7 +764,7 @@ class _AngleProgressBar extends StatelessWidget {
       ),
       const SizedBox(height: 6),
       Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Text('$photoCount / 25 photos',
+        Text('$photoCount / 9 photos',
             style: const TextStyle(
                 color: AppTheme.textSecondary, fontSize: 12)),
         Text('${(progress * 100).round()}%',

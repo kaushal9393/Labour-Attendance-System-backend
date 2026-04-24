@@ -24,6 +24,8 @@ class _FaceScanScreenState extends State<FaceScanScreen>
   bool _cameraReady  = false;
   String _statusText = 'Position your face in the circle';
   Timer? _autoCapture;
+  Timer? _dotTimer;
+  int _dotCount = 0;
 
   @override
   void initState() {
@@ -49,8 +51,8 @@ class _FaceScanScreenState extends State<FaceScanScreen>
     if (!mounted) return;
     setState(() => _cameraReady = true);
 
-    // Auto-capture every 2.5 s when face is expected to be in frame
-    _autoCapture = Timer.periodic(const Duration(milliseconds: 2500), (_) {
+    // Auto-capture every 1.5 s — faster trigger so user doesn't wait
+    _autoCapture = Timer.periodic(const Duration(milliseconds: 1500), (_) {
       if (!_isScanning && _cameraReady) _capture();
     });
   }
@@ -59,9 +61,17 @@ class _FaceScanScreenState extends State<FaceScanScreen>
     if (_camera == null || _isScanning) return;
     // Instant feedback — user knows scan started
     HapticFeedback.mediumImpact();
+    _dotCount = 0;
     setState(() {
       _isScanning  = true;
-      _statusText  = 'Scanning…';
+      _statusText  = 'Scanning.';
+    });
+    // Animate dots while server processes
+    _dotTimer?.cancel();
+    _dotTimer = Timer.periodic(const Duration(milliseconds: 400), (_) {
+      if (!mounted) return;
+      _dotCount = (_dotCount + 1) % 4;
+      setState(() => _statusText = 'Scanning${'.' * (_dotCount + 1)}');
     });
 
     try {
@@ -79,6 +89,7 @@ class _FaceScanScreenState extends State<FaceScanScreen>
       final response = await ApiService().scanFace(b64, AppConstants.companyCode);
       final data     = response.data as Map<String, dynamic>;
 
+      _dotTimer?.cancel();
       if (!mounted) return;
 
       if (data['success'] == true) {
@@ -99,6 +110,7 @@ class _FaceScanScreenState extends State<FaceScanScreen>
         context.go('/kiosk/failed');
       }
     } catch (_) {
+      _dotTimer?.cancel();
       if (mounted) {
         setState(() {
           _isScanning  = false;
@@ -111,6 +123,7 @@ class _FaceScanScreenState extends State<FaceScanScreen>
   @override
   void dispose() {
     _autoCapture?.cancel();
+    _dotTimer?.cancel();
     _camera?.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();

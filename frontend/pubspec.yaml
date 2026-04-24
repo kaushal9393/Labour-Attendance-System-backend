@@ -10,6 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   image: ^4.1.7
+  flutter_image_compress: ^2.3.0
 
   # State management
   flutter_riverpod: ^2.5.1

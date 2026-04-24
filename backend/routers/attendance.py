@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, date, timezone
+from datetime import datetime, date
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -14,6 +14,7 @@ from models.schemas import (
     ScanRequest, ScanResponse,
     TodayAttendanceResponse, AttendanceRecord,
     MonthlyAttendanceRecord,
+    ManualCheckoutRequest, ManualCheckoutResponse,
 )
 
 logger = logging.getLogger("garage_api.attendance")
@@ -85,7 +86,8 @@ async def scan_face(
             success=False,
             reason=f"face_not_recognized (top={similarity:.2f} < {COSINE_THRESHOLD})",
         )
-    now        = datetime.now(timezone.utc).replace(tzinfo=None)
+    # Use local server time — window times in the DB are stored in local time
+    now        = datetime.now()
     today      = now.date()
     time_str   = now.strftime("%H:%M:%S")
 
@@ -117,31 +119,78 @@ async def scan_face(
     )
     record = existing.fetchone()
 
-    # Time window enforcement
+    # Time window enforcement — fail-closed: if a window is configured (even
+    # partially), reject scans outside it rather than silently allowing them.
     now_time = now.time()
     if record is None:
-        if ci_start is not None and ci_end is not None:
+        # Determining a check-in attempt
+        if ci_start is not None or ci_end is not None:
+            # Both boundaries must be set; if only one is configured it's a
+            # misconfiguration — block the scan so nothing slips through.
+            if ci_start is None or ci_end is None:
+                logger.warning(
+                    f"[Scan] Incomplete check-in window config for company_id={company_id}: "
+                    f"start={ci_start} end={ci_end}"
+                )
+                return ScanResponse(
+                    success=False,
+                    match=True,
+                    action="check_in",
+                    employee_name=emp_name,
+                    reason="checkin_window_misconfigured",
+                    message="Check-in time window is not fully configured. Please contact your administrator.",
+                )
             if not (ci_start <= now_time <= ci_end):
+                logger.info(
+                    f"[Scan] Check-in rejected for {emp_name}: "
+                    f"now={now_time} outside window {ci_start}–{ci_end}"
+                )
                 return ScanResponse(
                     success=False,
                     match=True,
                     action="check_in",
                     employee_name=emp_name,
                     reason="outside_checkin_window",
-                    message=f"Check-in allowed only between {ci_start} and {ci_end}",
+                    message=(
+                        f"Check-in is only allowed between "
+                        f"{ci_start.strftime('%I:%M %p')} and {ci_end.strftime('%I:%M %p')}. "
+                        f"Current time {now_time.strftime('%I:%M %p')} is outside this window."
+                    ),
                     window_start=str(ci_start),
                     window_end=str(ci_end),
                 )
     else:
-        if co_start is not None and co_end is not None:
+        # Determining a check-out attempt
+        if co_start is not None or co_end is not None:
+            if co_start is None or co_end is None:
+                logger.warning(
+                    f"[Scan] Incomplete check-out window config for company_id={company_id}: "
+                    f"start={co_start} end={co_end}"
+                )
+                return ScanResponse(
+                    success=False,
+                    match=True,
+                    action="check_out",
+                    employee_name=emp_name,
+                    reason="checkout_window_misconfigured",
+                    message="Check-out time window is not fully configured. Please contact your administrator.",
+                )
             if not (co_start <= now_time <= co_end):
+                logger.info(
+                    f"[Scan] Check-out rejected for {emp_name}: "
+                    f"now={now_time} outside window {co_start}–{co_end}"
+                )
                 return ScanResponse(
                     success=False,
                     match=True,
                     action="check_out",
                     employee_name=emp_name,
                     reason="outside_checkout_window",
-                    message=f"Check-out allowed only between {co_start} and {co_end}",
+                    message=(
+                        f"Check-out is only allowed between "
+                        f"{co_start.strftime('%I:%M %p')} and {co_end.strftime('%I:%M %p')}. "
+                        f"Current time {now_time.strftime('%I:%M %p')} is outside this window."
+                    ),
                     window_start=str(co_start),
                     window_end=str(co_end),
                 )
@@ -244,6 +293,8 @@ async def monthly_attendance(
     user: dict         = Depends(get_current_user),
 ):
     company_id = user["company_id"]
+    # Never return attendance records for future dates
+    today = date.today()
 
     rows = await db.execute(
         text(
@@ -253,9 +304,10 @@ async def monthly_attendance(
             "WHERE a.employee_id = :eid AND a.company_id = :cid "
             "AND EXTRACT(MONTH FROM a.attendance_date) = :month "
             "AND EXTRACT(YEAR  FROM a.attendance_date) = :year "
+            "AND a.attendance_date <= :today "
             "ORDER BY a.attendance_date"
         ),
-        {"eid": employee_id, "cid": company_id, "month": month, "year": year},
+        {"eid": employee_id, "cid": company_id, "month": month, "year": year, "today": today},
     )
     return [
         MonthlyAttendanceRecord(
@@ -264,6 +316,74 @@ async def monthly_attendance(
         )
         for r in rows.fetchall()
     ]
+
+
+# ─── POST /api/attendance/manual-checkout ────────────────────
+# Admin-only: override / set check_out for an employee on a given date.
+# If the employee has no attendance record for that date, one is created
+# with status "present" so the admin can still record a departure.
+@router.post("/manual-checkout", response_model=ManualCheckoutResponse)
+async def manual_checkout(
+    payload: ManualCheckoutRequest,
+    db:      AsyncSession = Depends(get_db),
+    user:    dict         = Depends(get_current_user),   # JWT required
+):
+    company_id = user["company_id"]
+
+    # Verify employee belongs to this company
+    emp_row = await db.execute(
+        text("SELECT id, name FROM employees WHERE id = :eid AND company_id = :cid AND status != 'deleted'"),
+        {"eid": payload.employee_id, "cid": company_id},
+    )
+    emp = emp_row.fetchone()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    emp_name = emp[1]
+    checkout_dt = payload.checkout_time or datetime.now().replace(tzinfo=None)
+    # Strip tzinfo so it matches the naive timestamps stored in the DB
+    if checkout_dt.tzinfo is not None:
+        from datetime import timezone
+        checkout_dt = checkout_dt.astimezone(timezone.utc).replace(tzinfo=None)
+
+    # Check for existing attendance record on that date
+    existing = await db.execute(
+        text("SELECT id, check_in FROM attendance WHERE employee_id = :eid AND attendance_date = :dt"),
+        {"eid": payload.employee_id, "dt": payload.attendance_date},
+    )
+    record = existing.fetchone()
+
+    if record is None:
+        # No check-in at all — create a minimal record so admin can record checkout
+        await db.execute(
+            text(
+                "INSERT INTO attendance (employee_id, company_id, attendance_date, check_in, check_out, status, match_score) "
+                "VALUES (:eid, :cid, :dt, :cin, :cout, 'present', NULL)"
+            ),
+            {
+                "eid": payload.employee_id,
+                "cid": company_id,
+                "dt": payload.attendance_date,
+                "cin": checkout_dt,   # use checkout time as check-in placeholder
+                "cout": checkout_dt,
+            },
+        )
+    else:
+        await db.execute(
+            text("UPDATE attendance SET check_out = :cout WHERE id = :rid"),
+            {"cout": checkout_dt, "rid": record[0]},
+        )
+
+    await db.commit()
+    today = date.today()
+    cache.invalidate(f"today_attendance_{company_id}_{today}")
+
+    return ManualCheckoutResponse(
+        success=True,
+        employee_name=emp_name,
+        checkout_time=checkout_dt.strftime("%H:%M:%S"),
+        message=f"Checkout recorded for {emp_name} on {payload.attendance_date}",
+    )
 
 
 # ─── Helpers ──────────────────────────────────────────────────

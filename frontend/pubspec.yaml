@@ -39,8 +39,11 @@ dependencies:
   fl_chart: ^0.67.0
   table_calendar: ^3.1.1
 
+  # Local notifications
+  flutter_local_notifications: ^17.2.2
+  timezone: ^0.9.4
+
   # Utils
-  image: ^4.1.7
   permission_handler: ^11.3.0
   local_auth: ^2.2.0
 

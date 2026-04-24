@@ -109,6 +109,17 @@ class ApiService {
 
   Future<Response> getTodayAttendance() => _dio.get('/attendance/today');
 
+  Future<Response> manualCheckout({
+    required int employeeId,
+    required DateTime attendanceDate,
+    DateTime? checkoutTime,
+  }) =>
+      _dio.post('/attendance/manual-checkout', data: {
+        'employee_id': employeeId,
+        'attendance_date': attendanceDate.toIso8601String().substring(0, 10),
+        if (checkoutTime != null) 'checkout_time': checkoutTime.toIso8601String(),
+      });
+
   Future<Response> getMonthlyAttendance({
     required int employeeId,
     required int month,

@@ -21,6 +21,7 @@ import '../screens/admin/monthly_report_screen.dart';
 import '../screens/admin/salary_view_screen.dart';
 import '../screens/admin/notifications_screen.dart';
 import '../screens/admin/settings_screen.dart';
+import '../screens/admin/manual_checkout_screen.dart';
 import '../screens/mode_select_screen.dart';
 import '../screens/employee_report_screen.dart';
 import '../models/employee.dart';
@@ -96,8 +97,9 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/admin/attendance',  builder: (_, __) => const AttendanceHistoryScreen()),
           GoRoute(path: '/admin/reports',     builder: (_, __) => const MonthlyReportScreen()),
           GoRoute(path: '/admin/salary',      builder: (_, __) => const SalaryViewScreen()),
-          GoRoute(path: '/admin/notifications', builder: (_, __) => const NotificationsScreen()),
-          GoRoute(path: '/admin/settings',    builder: (_, __) => const AdminSettingsScreen()),
+          GoRoute(path: '/admin/notifications',      builder: (_, __) => const NotificationsScreen()),
+          GoRoute(path: '/admin/settings',           builder: (_, __) => const AdminSettingsScreen()),
+          GoRoute(path: '/admin/manual-checkout',    builder: (_, __) => const ManualCheckoutScreen()),
         ],
       ),
     ],

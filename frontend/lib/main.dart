@@ -9,6 +9,7 @@ import 'core/theme.dart';
 import 'core/router.dart';
 import 'services/api_service.dart';
 import 'services/cache_service.dart';
+import 'services/notification_service.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackground(RemoteMessage message) async {
@@ -43,9 +44,10 @@ Future<void> main() async {
     // Firebase not configured yet — app still works
   }
 
-  // Init cache and API service
+  // Init cache, API service, and local notifications
   await CacheService.init();
   ApiService().init();
+  await NotificationService().init();
 
   // Prefetch common data in background — don't await
   ApiService.prefetchAll();

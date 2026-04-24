@@ -105,6 +105,17 @@ class MonthlyAttendanceRecord(BaseModel):
     status: str
     match_score: Optional[Decimal]
 
+class ManualCheckoutRequest(BaseModel):
+    employee_id: int
+    attendance_date: date          # which day to override (defaults to today)
+    checkout_time: Optional[datetime] = None  # None = use server's current time
+
+class ManualCheckoutResponse(BaseModel):
+    success: bool
+    employee_name: str
+    checkout_time: str
+    message: str
+
 
 # ─────────────────────────────────────────
 # SALARY

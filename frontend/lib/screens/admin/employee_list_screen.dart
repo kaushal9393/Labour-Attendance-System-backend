@@ -92,6 +92,8 @@ class EmployeeListScreen extends ConsumerWidget {
           return ListView.builder(
             padding: const EdgeInsets.fromLTRB(0, 8, 0, 100),
             itemCount: employees.length,
+            addAutomaticKeepAlives: false,
+            addRepaintBoundaries: false,
             itemBuilder: (_, i) => _EmployeeCard(employee: employees[i]),
           );
         },

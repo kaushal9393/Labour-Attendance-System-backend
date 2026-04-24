@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from dotenv import load_dotenv
 
 import asyncio
@@ -56,6 +57,9 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+# ── Compression (reduces response size 60-80%) ────────────────
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
 # ── CORS ──────────────────────────────────────────────────────
 origins = os.getenv("CORS_ORIGINS", "*").split(",")
 app.add_middleware(
@@ -79,6 +83,11 @@ app.include_router(settings_router.router)
 @app.get("/health", tags=["Health"])
 async def health():
     return {"status": "ok", "service": "Garage Attendance API"}
+
+
+@app.get("/ping", tags=["Health"])
+async def ping():
+    return {"status": "ok"}
 
 
 @app.get("/", tags=["Health"])

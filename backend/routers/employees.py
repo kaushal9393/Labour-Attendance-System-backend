@@ -8,6 +8,7 @@ import numpy as np
 
 from core.database import get_db
 from core.security import get_current_user
+from core.cache import cache
 from core.face_service import process_registration_photos
 from utils.cloudinary_helper import upload_base64_photo
 from models.schemas import EmployeeCreate, EmployeeUpdate, EmployeeResponse, MessageResponse
@@ -21,6 +22,11 @@ async def list_employees(
     user: dict         = Depends(get_current_user),
 ):
     company_id = user["company_id"]
+    cache_key = f"employees_list_{company_id}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     rows = await db.execute(
         text(
             "SELECT id, company_id, name, phone, monthly_salary, joining_date, "
@@ -31,7 +37,7 @@ async def list_employees(
         {"cid": company_id},
     )
     employees = rows.fetchall()
-    return [
+    result = [
         EmployeeResponse(
             id=r[0], company_id=r[1], name=r[2], phone=r[3],
             monthly_salary=r[4], joining_date=r[5],
@@ -39,6 +45,8 @@ async def list_employees(
         )
         for r in employees
     ]
+    cache.set(cache_key, result, ttl_seconds=30)
+    return result
 
 
 @router.post("/register", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
@@ -106,6 +114,7 @@ async def register_employee(
         )
 
     await db.commit()
+    cache.invalidate(f"employees_list_{company_id}")
     return MessageResponse(message=f"Employee '{payload.name}' registered successfully")
 
 
@@ -138,6 +147,7 @@ async def update_employee(
         updates,
     )
     await db.commit()
+    cache.invalidate(f"employees_list_{company_id}")
     return MessageResponse(message="Employee updated successfully")
 
 
@@ -153,4 +163,5 @@ async def delete_employee(
         {"eid": employee_id, "cid": company_id},
     )
     await db.commit()
+    cache.invalidate(f"employees_list_{company_id}")
     return MessageResponse(message="Employee deactivated")

@@ -33,8 +33,9 @@ class ApiService {
   void init() {
     _dio = Dio(BaseOptions(
       baseUrl:        AppConstants.baseUrl,
-      connectTimeout: const Duration(seconds: 30),
-      receiveTimeout: const Duration(seconds: 180),
+      connectTimeout: const Duration(seconds: 8),
+      receiveTimeout: const Duration(seconds: 8),
+      sendTimeout:    const Duration(seconds: 8),
       headers: {'Content-Type': 'application/json'},
     ));
 
@@ -60,14 +61,23 @@ class ApiService {
     Future.microtask(warmupBackend);
   }
 
-  /// Ping the backend health endpoint to wake a cold Railway instance.
+  /// Ping the backend to wake a cold Railway instance.
   Future<void> warmupBackend() async {
     try {
-      await _dio.get('/health',
+      await _dio.get('/ping',
           options: Options(receiveTimeout: const Duration(seconds: 15)));
-    } catch (_) {
-      // Ignore errors — best-effort warmup
-    }
+    } catch (_) {}
+  }
+
+  /// Prefetch common data into device cache at startup.
+  static Future<void> prefetchAll() async {
+    try {
+      final api = ApiService();
+      await Future.wait([
+        api.getEmployees(),
+        api.getTodayAttendance(),
+      ]);
+    } catch (_) {}
   }
 
   // ── Auth ────────────────────────────────────────────────────

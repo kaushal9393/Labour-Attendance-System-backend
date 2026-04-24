@@ -9,6 +9,7 @@ from sqlalchemy import text
 from core.database import get_db
 from core.security import get_current_user
 from core.face_service import check_liveness, get_embedding
+from core.cache import cache
 from models.schemas import (
     ScanRequest, ScanResponse,
     TodayAttendanceResponse, AttendanceRecord,
@@ -173,6 +174,7 @@ async def scan_face(
         action = "check_out"
 
     await db.commit()
+    cache.invalidate(f"today_attendance_{company_id}_{today}")
     return ScanResponse(
         success=True,
         employee_name=emp_name,
@@ -190,6 +192,10 @@ async def today_attendance(
 ):
     company_id = user["company_id"]
     today = date.today()
+    cache_key = f"today_attendance_{company_id}_{today}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
 
     rows = await db.execute(
         text(
@@ -217,13 +223,15 @@ async def today_attendance(
     late    = sum(1 for r in records if r.status == "late")
     absent  = sum(1 for r in records if r.status == "absent")
 
-    return TodayAttendanceResponse(
+    response = TodayAttendanceResponse(
         date=today,
         total_present=present,
         total_absent=absent,
         total_late=late,
         records=records,
     )
+    cache.set(cache_key, response, ttl_seconds=15)
+    return response
 
 
 # ─── GET /api/attendance/monthly ─────────────────────────────

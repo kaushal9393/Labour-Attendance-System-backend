@@ -12,11 +12,11 @@ List<String> _compressPhotosIsolate(List<String> photos) {
       final bytes   = base64Decode(b64);
       final decoded = img.decodeImage(bytes);
       if (decoded == null) return b64;
-      final needsResize = decoded.width > 480 || decoded.height > 480;
+      final needsResize = decoded.width > 320 || decoded.height > 320;
       final resized = needsResize
-          ? img.copyResize(decoded, width: 480, height: 480)
+          ? img.copyResize(decoded, width: 320, height: 320)
           : decoded;
-      return base64Encode(img.encodeJpg(resized, quality: 75));
+      return base64Encode(img.encodeJpg(resized, quality: 60));
     } catch (_) {
       return b64;
     }
@@ -33,9 +33,9 @@ class ApiService {
   void init() {
     _dio = Dio(BaseOptions(
       baseUrl:        AppConstants.baseUrl,
-      connectTimeout: const Duration(seconds: 8),
-      receiveTimeout: const Duration(seconds: 8),
-      sendTimeout:    const Duration(seconds: 8),
+      connectTimeout: const Duration(seconds: 10),
+      receiveTimeout: const Duration(seconds: 120),
+      sendTimeout:    const Duration(seconds: 60),
       headers: {'Content-Type': 'application/json'},
     ));
 
@@ -91,10 +91,20 @@ class ApiService {
     if (body['photos'] is List) {
       final raw = (body['photos'] as List).cast<String>();
       body = Map<String, dynamic>.from(body);
-      // Compress all photos off the main thread in a single isolate
-      body['photos'] = await compute(_compressPhotosIsolate, raw);
+      final compressed = await compute(_compressPhotosIsolate, raw);
+      // Cast explicitly — compute() returns List<dynamic> across isolate boundary
+      body['photos'] = List<String>.from(compressed);
     }
-    return _dio.post('/employees/register', data: body);
+    // Encode as JSON string explicitly so Dio does not re-encode nested lists
+    return _dio.post(
+      '/employees/register',
+      data: jsonEncode(body),
+      options: Options(
+        sendTimeout: const Duration(seconds: 60),
+        receiveTimeout: const Duration(seconds: 120),
+        contentType: 'application/json',
+      ),
+    );
   }
 
   Future<Response> updateEmployee(int id, Map<String, dynamic> body) =>

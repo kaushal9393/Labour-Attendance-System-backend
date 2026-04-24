@@ -168,28 +168,56 @@ def average_embeddings(embeddings: List[List[float]]) -> List[float]:
     return avg.tolist()
 
 
+# ── Image resize helper ───────────────────────────────────────
+def _resize_for_embedding(img: np.ndarray, max_dim: int = 480) -> np.ndarray:
+    """Downscale large images before embedding — ArcFace only needs ~112x112 internally."""
+    h, w = img.shape[:2]
+    if max(h, w) <= max_dim:
+        return img
+    scale = max_dim / max(h, w)
+    return cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+
+
+def _get_embedding_from_img(img: np.ndarray) -> Optional[List[float]]:
+    return extract_embedding(_resize_for_embedding(img))
+
+
 # ── Registration helper ───────────────────────────────────────
 def process_registration_photos(photos: List[str]) -> dict:
     """
-    Accept 25 base64 photos (front:0-8, left:9-16, right:17-24).
+    Accept 9–25 base64 photos.
+    Layout: front first third, left middle third, right last third.
     Returns averaged ArcFace embeddings per angle + profile_b64.
+    Supports both legacy 25-photo and new 9-photo captures.
     """
+    n = len(photos)
+    third = n // 3
     groups = {
-        "front": photos[0:9],
-        "left":  photos[9:17],
-        "right": photos[17:25],
+        "front": photos[0:third],
+        "left":  photos[third:third*2],
+        "right": photos[third*2:n],
     }
 
-    # Warm the singleton once before spawning workers (avoids thundering herd on first load)
+    # Pre-decode all images once (avoids re-decoding per thread)
+    decoded: dict[str, List[np.ndarray]] = {}
+    for angle, group in groups.items():
+        imgs = []
+        for p in group:
+            img = decode_base64_image(p)
+            if img is not None:
+                imgs.append(_resize_for_embedding(img))
+        decoded[angle] = imgs
+
+    # Warm singleton before workers
     _get_insight()
 
     result = {}
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        angle_to_future_list = {
-            angle: [executor.submit(get_embedding, p) for p in group]
-            for angle, group in groups.items()
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        angle_to_futures = {
+            angle: [executor.submit(extract_embedding, img) for img in imgs]
+            for angle, imgs in decoded.items()
         }
-        for angle, futures in angle_to_future_list.items():
+        for angle, futures in angle_to_futures.items():
             embeddings = [f.result() for f in futures]
             embeddings = [e for e in embeddings if e is not None]
             if len(embeddings) < 1:

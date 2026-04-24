@@ -27,13 +27,13 @@ class EmployeeCreate(BaseModel):
     phone: Optional[str] = None
     monthly_salary: Decimal
     joining_date: date
-    photos: List[str]  # 25 base64 images
+    photos: List[str]  # 9–25 base64 images (3 per angle)
 
     @field_validator('photos')
     @classmethod
-    def must_have_25_photos(cls, v):
-        if len(v) != 25:
-            raise ValueError('Exactly 25 photos required for face registration')
+    def must_have_enough_photos(cls, v):
+        if len(v) < 9:
+            raise ValueError('At least 9 photos required for face registration (3 per angle)')
         return v
 
 class EmployeeUpdate(BaseModel):

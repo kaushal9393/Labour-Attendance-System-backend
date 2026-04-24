@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 import calendar
+import datetime
 
 from core.database import get_db
 from core.security import get_current_user
@@ -26,7 +27,13 @@ async def monthly_summary(
     )
     settings = settings_row.fetchone()
     days_per_week = settings[0] if settings else 6
-    working_days  = _count_working_days(year, month, days_per_week)
+
+    today = datetime.date.today()
+    if month == today.month and year == today.year:
+        count_till = today.day
+    else:
+        count_till = calendar.monthrange(year, month)[1]
+    working_days = _count_working_days(year, month, days_per_week, up_to_day=count_till)
 
     rows = await db.execute(
         text(
@@ -63,7 +70,8 @@ async def monthly_summary(
     return MonthlySummaryResponse(month=month, year=year, employees=employees)
 
 
-def _count_working_days(year: int, month: int, days_per_week: int) -> int:
+def _count_working_days(year: int, month: int, days_per_week: int, up_to_day: int = None) -> int:
     _, total_days = calendar.monthrange(year, month)
+    cap = up_to_day if up_to_day is not None else total_days
     exclude = [6] if days_per_week == 6 else ([5, 6] if days_per_week == 5 else [])
-    return sum(1 for d in range(1, total_days + 1) if calendar.weekday(year, month, d) not in exclude)
+    return sum(1 for d in range(1, cap + 1) if calendar.weekday(year, month, d) not in exclude)

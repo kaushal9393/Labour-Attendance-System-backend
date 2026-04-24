@@ -15,8 +15,9 @@ from dotenv import load_dotenv
 
 import asyncio
 
-from core.database import ping_db
+from core.database import ping_db, AsyncSessionLocal
 from core.face_service import warmup_models
+from core import face_cache
 from routers import auth, employees, attendance, salary, reports, settings as settings_router
 
 load_dotenv()
@@ -43,6 +44,28 @@ async def lifespan(app: FastAPI):
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, warmup_models)
     logger.info("✅ Face models ready")
+
+    # Load all face vectors into memory — scan will use cache, not DB
+    logger.info("🔄 Loading face vectors into memory cache…")
+    try:
+        from sqlalchemy import text as sa_text
+        import json
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(sa_text(
+                "SELECT fv.employee_id, e.company_id, e.name, "
+                "fv.face_vector::text AS face_vector "
+                "FROM face_vectors fv "
+                "JOIN employees e ON e.id = fv.employee_id "
+                "WHERE e.status = 'active'"
+            ))
+            rows = result.fetchall()
+            parsed = [
+                (r[0], r[1], r[2], json.loads(r[3]))
+                for r in rows
+            ]
+        await loop.run_in_executor(None, face_cache.load_all, parsed)
+    except Exception as e:
+        logger.warning(f"⚠️ Face cache load failed (will use DB fallback): {e}")
     yield
     # ── Shutdown ──
     logger.info("Shutting down…")

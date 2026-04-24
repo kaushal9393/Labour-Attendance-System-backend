@@ -10,6 +10,7 @@ from core.database import get_db
 from core.security import get_current_user
 from core.cache import cache
 from core.face_service import process_registration_photos
+from core import face_cache
 from utils.cloudinary_helper import upload_base64_photo
 from models.schemas import EmployeeCreate, EmployeeUpdate, EmployeeResponse, MessageResponse
 
@@ -115,6 +116,15 @@ async def register_employee(
 
     await db.commit()
     cache.invalidate(f"employees_list_{company_id}")
+
+    # Update face cache so new employee is immediately scannable
+    face_cache.add_employee(
+        company_id=company_id,
+        emp_id=employee_id,
+        name=payload.name,
+        vectors=[face_data["front"], face_data["left"], face_data["right"]],
+    )
+
     return MessageResponse(message=f"Employee '{payload.name}' registered successfully")
 
 
@@ -164,4 +174,5 @@ async def delete_employee(
     )
     await db.commit()
     cache.invalidate(f"employees_list_{company_id}")
+    face_cache.remove_employee(company_id=company_id, emp_id=employee_id)
     return MessageResponse(message="Employee deleted")

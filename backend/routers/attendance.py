@@ -10,6 +10,7 @@ from core.database import get_db
 from core.security import get_current_user
 from core.face_service import check_liveness, get_embedding
 from core.cache import cache
+from core import face_cache
 from models.schemas import (
     ScanRequest, ScanResponse,
     TodayAttendanceResponse, AttendanceRecord,
@@ -63,40 +64,38 @@ async def scan_face(
     if embedding is None:
         return ScanResponse(success=False, reason="face_embedding_failed")
 
-    # 3. Direct pgvector query — get top match across all 3 angles
-    #    cosine distance  = fv.face_vector <=> query_vec    (range 0..2)
-    #    cosine similarity = 1 - cosine_distance            (range -1..1)
-    vec_str = "[" + ",".join(str(x) for x in embedding) + "]"
-    row = await db.execute(
-        text(
-            "SELECT e.id, e.name, fv.angle_type, "
-            "1 - (fv.face_vector <=> CAST(:vec AS vector)) AS similarity "
-            "FROM face_vectors fv "
-            "JOIN employees e ON e.id = fv.employee_id "
-            "WHERE e.company_id = :cid AND e.status != 'deleted' "
-            "ORDER BY fv.face_vector <=> CAST(:vec AS vector) ASC "
-            "LIMIT 1"
-        ),
-        {"vec": vec_str, "cid": company_id},
-    )
-    match = row.fetchone()
+    # 3. Match against in-memory face cache (zero DB call)
+    result = face_cache.find_best_match(company_id, embedding, COSINE_THRESHOLD)
 
-    if not match:
-        logger.info(f"[Scan] No face_vectors for company_id={company_id}")
-        return ScanResponse(success=False, reason="face_not_recognized")
+    if result is None:
+        # Fallback to DB if cache is empty (e.g. cache load failed at startup)
+        vec_str = "[" + ",".join(str(x) for x in embedding) + "]"
+        row = await db.execute(
+            text(
+                "SELECT e.id, e.name, "
+                "1 - (fv.face_vector <=> CAST(:vec AS vector)) AS similarity "
+                "FROM face_vectors fv "
+                "JOIN employees e ON e.id = fv.employee_id "
+                "WHERE e.company_id = :cid AND e.status = 'active' "
+                "ORDER BY fv.face_vector <=> CAST(:vec AS vector) ASC "
+                "LIMIT 1"
+            ),
+            {"vec": vec_str, "cid": company_id},
+        )
+        db_match = row.fetchone()
+        if not db_match or float(db_match[2]) < COSINE_THRESHOLD:
+            logger.info(f"[Scan] No match for company_id={company_id}")
+            return ScanResponse(success=False, reason="face_not_recognized")
+        emp_id, emp_name, similarity = db_match[0], db_match[1], float(db_match[2])
+    else:
+        emp_id, emp_name, similarity = result
 
-    emp_id, emp_name, angle_type, similarity = match
     similarity = float(similarity)
     logger.info(
-        f"[Scan] Top match: {emp_name} (id={emp_id}, angle={angle_type}) "
+        f"[Scan] Top match: {emp_name} (id={emp_id}) "
         f"similarity={similarity:.4f} threshold={COSINE_THRESHOLD}"
     )
 
-    if similarity < COSINE_THRESHOLD:
-        return ScanResponse(
-            success=False,
-            reason=f"face_not_recognized (top={similarity:.2f} < {COSINE_THRESHOLD})",
-        )
     # Use local server time — window times in the DB are stored in local time
     now        = datetime.now()
     today      = now.date()

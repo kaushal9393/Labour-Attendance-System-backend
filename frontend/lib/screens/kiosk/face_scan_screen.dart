@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/constants.dart';
@@ -41,7 +43,8 @@ class _FaceScanScreenState extends State<FaceScanScreen>
       (c) => c.lensDirection == CameraLensDirection.front,
       orElse: () => cameras.first,
     );
-    _camera = CameraController(cam, ResolutionPreset.high, enableAudio: false);
+    // medium = 480p — enough for ArcFace, much faster to encode/send than high/1080p
+    _camera = CameraController(cam, ResolutionPreset.medium, enableAudio: false);
     await _camera!.initialize();
     if (!mounted) return;
     setState(() => _cameraReady = true);
@@ -54,6 +57,8 @@ class _FaceScanScreenState extends State<FaceScanScreen>
 
   Future<void> _capture() async {
     if (_camera == null || _isScanning) return;
+    // Instant feedback — user knows scan started
+    HapticFeedback.mediumImpact();
     setState(() {
       _isScanning  = true;
       _statusText  = 'Scanning…';
@@ -61,7 +66,14 @@ class _FaceScanScreenState extends State<FaceScanScreen>
 
     try {
       final xFile = await _camera!.takePicture();
-      final bytes = await xFile.readAsBytes();
+      // Compress to 480px / quality 80 before encoding — reduces payload ~70%
+      final compressed = await FlutterImageCompress.compressWithFile(
+        xFile.path,
+        minWidth: 480,
+        minHeight: 480,
+        quality: 80,
+      );
+      final bytes = compressed ?? await xFile.readAsBytes();
       final b64   = base64Encode(bytes);
 
       final response = await ApiService().scanFace(b64, AppConstants.companyCode);
@@ -233,7 +245,7 @@ class _FaceScanScreenState extends State<FaceScanScreen>
               Navigator.pop(context);
               final prefs = await SharedPreferences.getInstance();
               await prefs.remove(AppConstants.keyMode);
-              if (context.mounted) context.go('/mode-select');
+              if (mounted) context.go('/mode-select');
             },
             child: const Text('Switch Mode',
                 style: TextStyle(color: Color(0xFF1565C0))),

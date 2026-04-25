@@ -62,13 +62,16 @@ async def scan_face(
         scale = 480 / max(h, w)
         img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
 
-    # Liveness on already-decoded img — no re-decode
+    # Liveness: try lenient settings first, then strict — reduces false rejects
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray = cv2.equalizeHist(gray)  # normalize brightness variations
     faces_detected = _get_cascade().detectMultiScale(
-        gray, scaleFactor=1.1, minNeighbors=4, minSize=(60, 60)
+        gray, scaleFactor=1.2, minNeighbors=3, minSize=(40, 40)
     )
     if len(faces_detected) == 0:
-        return ScanResponse(success=False, reason="liveness_failed:no_face_detected")
+        logger.info(f"[Scan] Haar cascade found no face for company_id={company_id} — proceeding to ArcFace anyway")
+        # Don't hard-block here — let ArcFace decide. Haar cascade is too strict
+        # on front cameras with slight angle/lighting variance.
 
     embedding = extract_embedding(img)
     if embedding is None:

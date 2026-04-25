@@ -1,6 +1,6 @@
 """
-face_service.py — ArcFace via ONNX Runtime directly (no insightface).
-buffalo_sc model files in /app/models/buffalo_sc/ (downloaded at build time).
+face_service.py — ArcFace via InsightFace (buffalo_sc model).
+Supports both 9-photo (ML Kit cropped) and legacy 25-photo registration.
 """
 import os
 import base64
@@ -14,44 +14,28 @@ import cv2
 
 logger = logging.getLogger(__name__)
 
-_MODEL_DIR = os.path.join(os.path.dirname(__file__), "..", "models", "buffalo_sc")
-_DET_MODEL = os.path.join(_MODEL_DIR, "det_500m.onnx")
-_REC_MODEL = os.path.join(_MODEL_DIR, "w600k_mbf.onnx")
-
-_det_session = None
-_rec_session = None
+_insight_app = None
 _model_lock  = threading.Lock()
 
 
-def _get_sessions():
-    global _det_session, _rec_session
-    if _det_session is None or _rec_session is None:
+def _get_insight():
+    global _insight_app
+    if _insight_app is None:
         with _model_lock:
-            if _det_session is None or _rec_session is None:
-                import onnxruntime as ort
-                opts = ort.SessionOptions()
-                opts.inter_op_num_threads = 2
-                opts.intra_op_num_threads = 2
-                providers = ["CPUExecutionProvider"]
-                _det_session = ort.InferenceSession(_DET_MODEL, opts, providers=providers)
-                _rec_session = ort.InferenceSession(_REC_MODEL, opts, providers=providers)
-                logger.info("[FaceService] ONNX sessions loaded OK")
-    return _det_session, _rec_session
-
-
-def warmup_models() -> None:
-    try:
-        det, rec = _get_sessions()
-        # Warm det
-        dummy_det = np.zeros((1, 3, 320, 320), dtype=np.float32)
-        det.run(None, {det.get_inputs()[0].name: dummy_det})
-        # Warm rec
-        dummy_rec = np.zeros((1, 3, 112, 112), dtype=np.float32)
-        rec.run(None, {rec.get_inputs()[0].name: dummy_rec})
-        _get_cascade()
-        logger.info("✅ Face models warmed up")
-    except Exception as e:
-        logger.warning(f"⚠️ Warmup failed: {e}")
+            if _insight_app is None:
+                try:
+                    from insightface.app import FaceAnalysis
+                    app = FaceAnalysis(
+                        name="buffalo_sc",
+                        providers=["CPUExecutionProvider"],
+                    )
+                    app.prepare(ctx_id=0, det_size=(320, 320))
+                    _insight_app = app
+                    logger.info("[Warmup] Loading InsightFace ArcFace model… done")
+                except Exception as e:
+                    logger.error(f"InsightFace load failed: {e}")
+                    raise
+    return _insight_app
 
 
 _face_cascade = None
@@ -59,10 +43,23 @@ _face_cascade = None
 def _get_cascade():
     global _face_cascade
     if _face_cascade is None:
+        logger.info("[Warmup] Loading Haar cascade…")
         _face_cascade = cv2.CascadeClassifier(
             cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
         )
     return _face_cascade
+
+
+def warmup_models() -> None:
+    try:
+        _get_insight()
+        # Warm with dummy image
+        dummy = np.zeros((160, 160, 3), dtype=np.uint8)
+        _get_insight().get(dummy)
+        _get_cascade()
+        logger.info("[Warmup] All models ready ✅")
+    except Exception as e:
+        logger.warning(f"⚠️ Warmup failed: {e}")
 
 
 def decode_base64_image(base64_string: str) -> Optional[np.ndarray]:
@@ -78,72 +75,66 @@ def decode_base64_image(base64_string: str) -> Optional[np.ndarray]:
         return None
 
 
-def _detect_face_box(img: np.ndarray):
-    """Run det_500m at 320x320 (faster than 640). Returns (x1,y1,x2,y2) or None."""
-    det, _ = _get_sessions()
-    h, w = img.shape[:2]
-    size = 320  # 4x faster than 640, still accurate enough
-    scale_x, scale_y = w / size, h / size
-    resized = cv2.resize(img, (size, size))
-    blob = resized.astype(np.float32).transpose(2, 0, 1)[np.newaxis]
+def extract_embedding(img: np.ndarray) -> Optional[List[float]]:
+    """Run InsightFace ArcFace on BGR image. Returns 512-dim list or None."""
     try:
-        outputs = det.run(None, {det.get_inputs()[0].name: blob})
-        scores, raw_boxes = outputs[0], outputs[1]
-        best_box, best_score = None, 0.4
-        for i, box in enumerate(raw_boxes):
-            score = float(scores[i][1]) if scores.ndim == 2 else float(scores[i])
-            if score > best_score:
-                best_score = score
-                best_box = (
-                    int(box[0] * scale_x), int(box[1] * scale_y),
-                    int(box[2] * scale_x), int(box[3] * scale_y),
-                )
-        return best_box
-    except Exception:
-        return None
-
-
-def _embed_face_crop(img: np.ndarray, box=None) -> Optional[List[float]]:
-    """Crop to box (or full image), resize 112x112, run ArcFace."""
-    try:
-        _, rec = _get_sessions()
-        h, w = img.shape[:2]
-        if box:
-            x1, y1, x2, y2 = box
-            pad = int(max(x2 - x1, y2 - y1) * 0.1)
-            x1 = max(0, x1 - pad); y1 = max(0, y1 - pad)
-            x2 = min(w, x2 + pad); y2 = min(h, y2 + pad)
-            face = img[y1:y2, x1:x2]
-        else:
-            face = img
-        if face is None or face.size == 0:
+        if img is None or img.ndim != 3 or img.shape[0] < 20 or img.shape[1] < 20:
             return None
-        face = cv2.resize(face, (112, 112))
-        face = (face.astype(np.float32) - 127.5) / 127.5
-        blob = face.transpose(2, 0, 1)[np.newaxis]
-        emb = rec.run(None, {rec.get_inputs()[0].name: blob})[0][0]
+        app = _get_insight()
+        faces = app.get(img)
+        if not faces:
+            return None
+        face = max(faces, key=lambda f: (f.bbox[2]-f.bbox[0])*(f.bbox[3]-f.bbox[1]))
+        emb = face.normed_embedding if hasattr(face, "normed_embedding") else face.embedding
+        if emb is None or len(emb) != 512:
+            return None
+        emb = np.asarray(emb, dtype=np.float32)
         norm = np.linalg.norm(emb)
         if norm > 0:
             emb = emb / norm
         return [float(x) for x in emb]
     except Exception as e:
-        logger.warning(f"Embed failed: {e}")
+        logger.warning(f"Embedding failed: {e}")
         return None
-
-
-def extract_embedding(img: np.ndarray) -> Optional[List[float]]:
-    """Detect face → embed. For scan: skip detection, use full image directly."""
-    if img is None or img.ndim != 3 or img.shape[0] < 20 or img.shape[1] < 20:
-        return None
-    box = _detect_face_box(img)
-    return _embed_face_crop(img, box)  # box=None → full image crop
 
 
 def extract_embedding_no_detect(img: np.ndarray) -> Optional[List[float]]:
-    """Skip face detection — treat full image as face. Use for scan (faster)."""
-    if img is None or img.ndim != 3:
-        return None
-    return _embed_face_crop(img, None)
+    """
+    For ML Kit pre-cropped images (224x224 face crop).
+    Resize to 112x112 and run ArcFace recognition directly — skip detection.
+    """
+    try:
+        if img is None or img.ndim != 3:
+            return None
+        # Resize to 112x112 (ArcFace input size)
+        face = cv2.resize(img, (112, 112))
+        face_norm = (face.astype(np.float32) - 127.5) / 127.5
+        blob = face_norm.transpose(2, 0, 1)[np.newaxis]  # NCHW
+
+        import onnxruntime as ort
+        # Reuse rec session from insightface if available
+        app = _get_insight()
+        # Get recognition model session directly
+        rec_model = None
+        for model in app.models.values():
+            if hasattr(model, 'session') and '112' in str(getattr(model, 'input_size', '')):
+                rec_model = model
+                break
+        if rec_model is None:
+            # Fallback: use full insightface pipeline on resized image
+            return extract_embedding(face)
+
+        session = rec_model.session
+        input_name = session.get_inputs()[0].name
+        emb = session.run(None, {input_name: blob})[0][0]
+        norm = np.linalg.norm(emb)
+        if norm > 0:
+            emb = emb / norm
+        return [float(x) for x in emb]
+    except Exception as e:
+        logger.warning(f"extract_embedding_no_detect failed, using full pipeline: {e}")
+        # Fallback to full detection pipeline
+        return extract_embedding(img)
 
 
 def get_embedding(b64_image: str) -> Optional[List[float]]:
@@ -174,10 +165,14 @@ def _resize_for_embedding(img: np.ndarray, max_dim: int = 480) -> np.ndarray:
 
 def process_registration_photos(photos: List[str]) -> dict:
     """
-    9–25 base64 photos → averaged ArcFace embeddings per angle.
-    Uses ThreadPoolExecutor for parallel processing across all photos.
+    Accept 3–25 base64 photos.
+    Layout: front first third, left middle third, right last third.
+    Returns averaged ArcFace embeddings per angle + profile_b64.
     """
     n = len(photos)
+    if n < 3:
+        raise ValueError(f"At least 3 photos required, got {n}")
+
     third = n // 3
     groups = {
         "front": photos[0:third],
@@ -185,29 +180,25 @@ def process_registration_photos(photos: List[str]) -> dict:
         "right": photos[third*2:n],
     }
 
-    _get_sessions()  # ensure sessions loaded before threads start
+    _get_insight()  # ensure loaded before threads
 
     def process_photo(p: str) -> Optional[List[float]]:
         img = decode_base64_image(p)
         if img is None:
             return None
-        # Flutter ML Kit already cropped the face to 224×224 — skip server detection
-        return extract_embedding_no_detect(img)
+        img = _resize_for_embedding(img, 480)
+        return extract_embedding(img)
 
     result = {}
-    # Process all photos in parallel across all angles
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    with ThreadPoolExecutor(max_workers=3) as executor:
         for angle, group in groups.items():
-            futures = {executor.submit(process_photo, p): p for p in group}
-            embeddings = []
-            for fut in as_completed(futures):
-                emb = fut.result()
-                if emb is not None:
-                    embeddings.append(emb)
+            futures = [executor.submit(process_photo, p) for p in group]
+            embeddings = [f.result() for f in futures]
+            embeddings = [e for e in embeddings if e is not None]
             if len(embeddings) < 1:
                 raise ValueError(
-                    f"Not enough valid face photos for angle '{angle}' "
-                    f"(got {len(embeddings)}/min 1)"
+                    f"No valid face detected for angle '{angle}'. "
+                    f"Please ensure face is clearly visible."
                 )
             result[angle] = average_embeddings(embeddings)
 

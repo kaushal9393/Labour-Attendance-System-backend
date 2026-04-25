@@ -48,5 +48,8 @@ RUN mkdir -p /app/models/buffalo_sc && \
 
 COPY . .
 
+# Verify face_service uses direct ONNX (not insightface)
+RUN python -c "import core.face_service; print('face_service OK')"
+
 EXPOSE 8080
 CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]

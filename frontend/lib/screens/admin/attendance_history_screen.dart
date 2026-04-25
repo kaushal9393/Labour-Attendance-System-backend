@@ -51,7 +51,7 @@ class _AttendanceHistoryScreenState
     if (dt == null) return '--:--';
     try {
       final t = DateTime.parse(dt).toLocal();
-      return DateFormat('HH:mm').format(t);
+      return DateFormat('hh:mm a').format(t);
     } catch (_) { return '--:--'; }
   }
 

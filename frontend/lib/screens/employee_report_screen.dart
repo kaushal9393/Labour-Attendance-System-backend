@@ -95,7 +95,7 @@ class _EmployeeReportScreenState extends State<EmployeeReportScreen> {
   String _fmtTime(String? iso) {
     if (iso == null) return '--';
     try {
-      return DateFormat('HH:mm').format(DateTime.parse(iso).toLocal());
+      return DateFormat('hh:mm a').format(DateTime.parse(iso).toLocal());
     } catch (_) {
       return '--';
     }

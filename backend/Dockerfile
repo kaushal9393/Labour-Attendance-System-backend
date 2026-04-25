@@ -1,6 +1,9 @@
 # syntax=docker/dockerfile:1
-# v2 — cache busted
+# v4 — pure onnxruntime, no insightface
 FROM python:3.10-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 RUN apt-get update && apt-get install -y \
     libgl1 libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 wget unzip \
@@ -8,7 +11,6 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Install all deps — NO insightface, direct onnxruntime only
 RUN pip install --no-cache-dir \
     fastapi==0.111.0 \
     "uvicorn[standard]==0.29.0" \
@@ -33,10 +35,15 @@ RUN mkdir -p /app/models/buffalo_sc && \
          -O /tmp/buffalo_sc.zip && \
     unzip -o /tmp/buffalo_sc.zip -d /app/models/buffalo_sc && \
     rm /tmp/buffalo_sc.zip && \
+    echo "=== buffalo_sc contents ===" && \
     ls -lh /app/models/buffalo_sc/
 
 COPY requirements.txt .
 COPY . .
+
+# Remove any stale Python bytecode from the copied source
+RUN find /app -name "*.pyc" -delete && \
+    find /app -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 
 EXPOSE 8080
 CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]

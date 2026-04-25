@@ -1,12 +1,12 @@
 """
-face_service.py — ArcFace via InsightFace (buffalo_sc model).
-Supports both 9-photo (ML Kit cropped) and legacy 25-photo registration.
+face_service.py — ArcFace via ONNX Runtime (buffalo_sc model, no insightface).
+Accepts 3-25 base64 photos for registration (3 per angle).
 """
 import os
 import base64
 import logging
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, List
 
 import numpy as np
@@ -14,28 +14,59 @@ import cv2
 
 logger = logging.getLogger(__name__)
 
-_insight_app = None
+_rec_session = None
+_det_session = None
 _model_lock  = threading.Lock()
 
+MODEL_DIR = os.environ.get("MODEL_DIR", "/app/models/buffalo_sc")
 
-def _get_insight():
-    global _insight_app
-    if _insight_app is None:
+
+def _get_rec_session():
+    """Load ArcFace recognition ONNX session (w600k_r50.onnx or 1k3d68.onnx)."""
+    global _rec_session
+    if _rec_session is None:
         with _model_lock:
-            if _insight_app is None:
-                try:
-                    from insightface.app import FaceAnalysis
-                    app = FaceAnalysis(
-                        name="buffalo_sc",
-                        providers=["CPUExecutionProvider"],
+            if _rec_session is None:
+                import onnxruntime as ort
+                # buffalo_sc ships w600k_r50.onnx for recognition
+                candidates = ["w600k_r50.onnx", "w600k_mbf.onnx", "glintr100.onnx"]
+                loaded = False
+                for name in candidates:
+                    path = os.path.join(MODEL_DIR, name)
+                    if os.path.exists(path):
+                        logger.info(f"[ArcFace] Loading recognition model: {path}")
+                        _rec_session = ort.InferenceSession(
+                            path, providers=["CPUExecutionProvider"]
+                        )
+                        loaded = True
+                        break
+                if not loaded:
+                    # List what's available
+                    files = os.listdir(MODEL_DIR) if os.path.exists(MODEL_DIR) else []
+                    raise RuntimeError(
+                        f"No ArcFace recognition model found in {MODEL_DIR}. "
+                        f"Files present: {files}"
                     )
-                    app.prepare(ctx_id=0, det_size=(320, 320))
-                    _insight_app = app
-                    logger.info("[Warmup] Loading InsightFace ArcFace model… done")
-                except Exception as e:
-                    logger.error(f"InsightFace load failed: {e}")
-                    raise
-    return _insight_app
+    return _rec_session
+
+
+def _get_det_session():
+    """Load SCRFD face detection ONNX session."""
+    global _det_session
+    if _det_session is None:
+        with _model_lock:
+            if _det_session is None:
+                import onnxruntime as ort
+                candidates = ["det_500m.onnx", "det_2.5g.onnx", "det_10g.onnx"]
+                for name in candidates:
+                    path = os.path.join(MODEL_DIR, name)
+                    if os.path.exists(path):
+                        logger.info(f"[SCRFD] Loading detection model: {path}")
+                        _det_session = ort.InferenceSession(
+                            path, providers=["CPUExecutionProvider"]
+                        )
+                        return _det_session
+    return _det_session  # may be None — we fall back to Haar
 
 
 _face_cascade = None
@@ -43,7 +74,6 @@ _face_cascade = None
 def _get_cascade():
     global _face_cascade
     if _face_cascade is None:
-        logger.info("[Warmup] Loading Haar cascade…")
         _face_cascade = cv2.CascadeClassifier(
             cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
         )
@@ -52,10 +82,9 @@ def _get_cascade():
 
 def warmup_models() -> None:
     try:
-        _get_insight()
-        # Warm with dummy image
-        dummy = np.zeros((160, 160, 3), dtype=np.uint8)
-        _get_insight().get(dummy)
+        _get_rec_session()
+        dummy = np.zeros((112, 112, 3), dtype=np.uint8)
+        _arcface_embed(dummy)
         _get_cascade()
         logger.info("[Warmup] All models ready ✅")
     except Exception as e:
@@ -75,56 +104,14 @@ def decode_base64_image(base64_string: str) -> Optional[np.ndarray]:
         return None
 
 
-def extract_embedding(img: np.ndarray) -> Optional[List[float]]:
-    """Run InsightFace ArcFace on BGR image. Returns 512-dim list or None."""
+def _arcface_embed(face_bgr: np.ndarray) -> Optional[List[float]]:
+    """Run ArcFace on a 112×112 BGR face crop, return normed 512-d embedding."""
     try:
-        if img is None or img.ndim != 3 or img.shape[0] < 20 or img.shape[1] < 20:
-            return None
-        app = _get_insight()
-        faces = app.get(img)
-        if not faces:
-            return None
-        face = max(faces, key=lambda f: (f.bbox[2]-f.bbox[0])*(f.bbox[3]-f.bbox[1]))
-        emb = face.normed_embedding if hasattr(face, "normed_embedding") else face.embedding
-        if emb is None or len(emb) != 512:
-            return None
-        emb = np.asarray(emb, dtype=np.float32)
-        norm = np.linalg.norm(emb)
-        if norm > 0:
-            emb = emb / norm
-        return [float(x) for x in emb]
-    except Exception as e:
-        logger.warning(f"Embedding failed: {e}")
-        return None
-
-
-def extract_embedding_no_detect(img: np.ndarray) -> Optional[List[float]]:
-    """
-    For ML Kit pre-cropped images (224x224 face crop).
-    Resize to 112x112 and run ArcFace recognition directly — skip detection.
-    """
-    try:
-        if img is None or img.ndim != 3:
-            return None
-        # Resize to 112x112 (ArcFace input size)
-        face = cv2.resize(img, (112, 112))
+        session = _get_rec_session()
+        face = cv2.resize(face_bgr, (112, 112))
+        # Normalize to [-1, 1]
         face_norm = (face.astype(np.float32) - 127.5) / 127.5
         blob = face_norm.transpose(2, 0, 1)[np.newaxis]  # NCHW
-
-        import onnxruntime as ort
-        # Reuse rec session from insightface if available
-        app = _get_insight()
-        # Get recognition model session directly
-        rec_model = None
-        for model in app.models.values():
-            if hasattr(model, 'session') and '112' in str(getattr(model, 'input_size', '')):
-                rec_model = model
-                break
-        if rec_model is None:
-            # Fallback: use full insightface pipeline on resized image
-            return extract_embedding(face)
-
-        session = rec_model.session
         input_name = session.get_inputs()[0].name
         emb = session.run(None, {input_name: blob})[0][0]
         norm = np.linalg.norm(emb)
@@ -132,9 +119,54 @@ def extract_embedding_no_detect(img: np.ndarray) -> Optional[List[float]]:
             emb = emb / norm
         return [float(x) for x in emb]
     except Exception as e:
-        logger.warning(f"extract_embedding_no_detect failed, using full pipeline: {e}")
-        # Fallback to full detection pipeline
-        return extract_embedding(img)
+        logger.warning(f"ArcFace embed failed: {e}")
+        return None
+
+
+def _detect_and_crop_face(img: np.ndarray) -> Optional[np.ndarray]:
+    """Detect largest face in image, return cropped BGR patch or None."""
+    h, w = img.shape[:2]
+
+    # Try Haar cascade (fast, no extra deps)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    cascade = _get_cascade()
+    faces = cascade.detectMultiScale(gray, 1.1, 5, minSize=(60, 60))
+    if len(faces) > 0:
+        # Pick largest
+        x, y, fw, fh = max(faces, key=lambda r: r[2] * r[3])
+        # 20% padding
+        pad = int((fw + fh) / 2 * 0.20)
+        x1 = max(0, x - pad)
+        y1 = max(0, y - pad)
+        x2 = min(w, x + fw + pad)
+        y2 = min(h, y + fh + pad)
+        return img[y1:y2, x1:x2]
+    return None
+
+
+def extract_embedding(img: np.ndarray) -> Optional[List[float]]:
+    """Detect face then embed. Falls back to center crop if no face found."""
+    if img is None or img.ndim != 3:
+        return None
+    crop = _detect_and_crop_face(img)
+    if crop is None:
+        # Fallback: use center square crop
+        h, w = img.shape[:2]
+        size = min(h, w)
+        x1 = (w - size) // 2
+        y1 = (h - size) // 2
+        crop = img[y1:y1+size, x1:x1+size]
+    return _arcface_embed(crop)
+
+
+def extract_embedding_no_detect(img: np.ndarray) -> Optional[List[float]]:
+    """
+    For ML Kit pre-cropped images (already face-cropped on device).
+    Skip detection, run ArcFace directly.
+    """
+    if img is None or img.ndim != 3:
+        return None
+    return _arcface_embed(img)
 
 
 def get_embedding(b64_image: str) -> Optional[List[float]]:
@@ -180,12 +212,16 @@ def process_registration_photos(photos: List[str]) -> dict:
         "right": photos[third*2:n],
     }
 
-    _get_insight()  # ensure loaded before threads
+    _get_rec_session()  # ensure loaded before threads
 
     def process_photo(p: str) -> Optional[List[float]]:
         img = decode_base64_image(p)
         if img is None:
             return None
+        # ML Kit already cropped to face — use no-detect path if small (224x224)
+        h, w = img.shape[:2]
+        if max(h, w) <= 256:
+            return extract_embedding_no_detect(img)
         img = _resize_for_embedding(img, 480)
         return extract_embedding(img)
 

@@ -33,18 +33,25 @@ async def scan_face(
     payload: ScanRequest,
     db:      AsyncSession = Depends(get_db),
 ):
-    # Resolve company_id from company_code
-    company_row = await db.execute(
-        text("SELECT id FROM companies WHERE company_code = :code"),
-        {"code": payload.company_code},
-    )
-    company = company_row.fetchone()
-    if not company:
-        raise HTTPException(status_code=404, detail="Invalid company code")
-    company_id = company[0]
+    # Resolve company_id from company_code — cached to avoid DB hit on every scan
+    cache_key = f"company_code_{payload.company_code}"
+    company_id = cache.get(cache_key)
+    if company_id is None:
+        company_row = await db.execute(
+            text("SELECT id FROM companies WHERE company_code = :code"),
+            {"code": payload.company_code},
+        )
+        company = company_row.fetchone()
+        if not company:
+            raise HTTPException(status_code=404, detail="Invalid company code")
+        company_id = company[0]
+        cache.set(cache_key, company_id, ttl_seconds=3600)
 
-    # 1+2. Decode image once, then run liveness + embedding on same ndarray
-    from core.face_service import decode_base64_image, check_liveness, extract_embedding
+    # Decode once, resize once, reuse for both liveness + embedding
+    import cv2
+    from core.face_service import decode_base64_image, extract_embedding
+    from core.face_service import _get_cascade
+
     img = decode_base64_image(payload.image)
     if img is None:
         return ScanResponse(success=False, reason="image_decode_failed")
@@ -53,12 +60,15 @@ async def scan_face(
     h, w = img.shape[:2]
     if max(h, w) > 480:
         scale = 480 / max(h, w)
-        import cv2
         img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
 
-    is_live, reason = check_liveness(payload.image)
-    if not is_live:
-        return ScanResponse(success=False, reason=f"liveness_failed:{reason}")
+    # Liveness on already-decoded img — no re-decode
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    faces_detected = _get_cascade().detectMultiScale(
+        gray, scaleFactor=1.1, minNeighbors=4, minSize=(60, 60)
+    )
+    if len(faces_detected) == 0:
+        return ScanResponse(success=False, reason="liveness_failed:no_face_detected")
 
     embedding = extract_embedding(img)
     if embedding is None:

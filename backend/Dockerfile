@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.10-slim
 
 # System deps for OpenCV + InsightFace ONNX
 RUN apt-get update && apt-get install -y \
@@ -8,13 +8,16 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     libxrender-dev \
     libgomp1 \
+    gcc \
+    g++ \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY requirements.txt .
 
-# Install all deps — onnxruntime already pinned so insightface won't pull a second copy
+# Install all deps including insightface
+# Python 3.10 has pre-built wheels for insightface 0.7.3 (no source compile needed)
 RUN pip install --no-cache-dir \
     fastapi==0.111.0 \
     "uvicorn[standard]==0.29.0" \
@@ -37,7 +40,7 @@ RUN pip install --no-cache-dir \
     Cython \
     insightface==0.7.3
 
-# Strip heavy optional packages insightface may have pulled (NOT onnx — insightface needs it)
+# Strip heavy optional packages insightface pulled (keep onnx — insightface needs it)
 RUN pip uninstall -y scipy scikit-learn scikit-image matplotlib albumentations \
     imageio tifffile lazy_loader || true
 

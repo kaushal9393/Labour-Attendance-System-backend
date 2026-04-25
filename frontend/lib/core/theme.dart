@@ -46,7 +46,7 @@ class AppTheme {
       ),
       iconTheme: IconThemeData(color: textPrimary),
     ),
-    cardTheme: CardThemeData(
+    cardTheme: const CardThemeData(
       color: cardBg,
       elevation: 0,
       shape: RoundedRectangleBorder(
@@ -60,12 +60,12 @@ class AppTheme {
         backgroundColor: accent,
         foregroundColor: Colors.white,
         minimumSize: const Size(double.infinity, 52),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(14))),
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(14))),
         elevation: 0,
-        textStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, letterSpacing: 0.3),
+        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, letterSpacing: 0.3),
       ),
     ),
-    inputDecorationTheme: InputDecorationTheme(
+    inputDecorationTheme: const InputDecorationTheme(
       filled: true,
       fillColor: Colors.white,
       border: OutlineInputBorder(
@@ -108,15 +108,15 @@ class AppTheme {
       type: BottomNavigationBarType.fixed,
       elevation: 12,
     ),
-    snackBarTheme: SnackBarThemeData(
+    snackBarTheme: const SnackBarThemeData(
       backgroundColor: textPrimary,
-      contentTextStyle: const TextStyle(color: Colors.white),
+      contentTextStyle: TextStyle(color: Colors.white),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
       behavior: SnackBarBehavior.floating,
     ),
-    chipTheme: ChipThemeData(
+    chipTheme: const ChipThemeData(
       backgroundColor: surface,
-      labelStyle: const TextStyle(color: textPrimary, fontSize: 12),
+      labelStyle: TextStyle(color: textPrimary, fontSize: 12),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(8))),
     ),
     floatingActionButtonTheme: const FloatingActionButtonThemeData(

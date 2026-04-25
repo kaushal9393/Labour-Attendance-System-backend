@@ -66,11 +66,13 @@ class _EmployeeReportScreenState extends State<EmployeeReportScreen> {
       ]);
       await CacheService.save(salaryKey, results[0].data);
       await CacheService.save(attKey,    results[1].data);
-      if (mounted) setState(() {
-        _salary     = Map<String, dynamic>.from(results[0].data as Map);
-        _attendance = results[1].data as List;
-        _loading    = false;
-      });
+      if (mounted) {
+        setState(() {
+          _salary     = Map<String, dynamic>.from(results[0].data as Map);
+          _attendance = results[1].data as List;
+          _loading    = false;
+        });
+      }
     } catch (_) {
       if (mounted && _salary == null) { setState(() => _loading = false); }
     }
@@ -782,7 +784,7 @@ class _EmployeeReportScreenState extends State<EmployeeReportScreen> {
           color: AppTheme.accent,
           borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
         ),
-        child: Row(children: const [
+        child: const Row(children: [
           Expanded(
               flex: 2,
               child: Text('Date',

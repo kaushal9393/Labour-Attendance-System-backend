@@ -149,7 +149,7 @@ class _ManualCheckoutScreenState extends ConsumerState<ManualCheckoutScreen> {
               final active =
                   employees.where((e) => e.status == 'active').toList();
               return DropdownButtonFormField<Employee>(
-                value: _selectedEmployee,
+                initialValue: _selectedEmployee,
                 dropdownColor: AppTheme.cardBg,
                 decoration: const InputDecoration(
                   hintText: 'Select employee',

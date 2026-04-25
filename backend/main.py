@@ -108,11 +108,11 @@ async def health():
     return {"status": "ok", "service": "Garage Attendance API"}
 
 
-@app.get("/ping", tags=["Health"])
+@app.api_route("/ping", methods=["GET", "HEAD"], tags=["Health"])
 async def ping():
     return {"status": "ok"}
 
 
-@app.get("/", tags=["Health"])
+@app.api_route("/", methods=["GET", "HEAD"], tags=["Health"])
 async def root():
     return {"message": "Garage Attendance System API v1.0 — /docs for Swagger UI"}

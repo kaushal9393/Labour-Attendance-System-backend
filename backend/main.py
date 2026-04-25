@@ -40,6 +40,22 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("⚠️  Database connection failed — check DATABASE_URL")
 
+    # Run DB migrations to add any missing columns
+    try:
+        from sqlalchemy import text as _text
+        async with AsyncSessionLocal() as _session:
+            await _session.execute(_text("""
+                ALTER TABLE settings
+                    ADD COLUMN IF NOT EXISTS checkin_window_start  TIME,
+                    ADD COLUMN IF NOT EXISTS checkin_window_end    TIME,
+                    ADD COLUMN IF NOT EXISTS checkout_window_start TIME,
+                    ADD COLUMN IF NOT EXISTS checkout_window_end   TIME
+            """))
+            await _session.commit()
+        logger.info("✅ DB migration complete")
+    except Exception as _e:
+        logger.warning(f"⚠️ DB migration warning: {_e}")
+
     # Preload face recognition models so first request is fast
     logger.info("🔄 Warming up face recognition models…")
     loop = asyncio.get_event_loop()

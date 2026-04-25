@@ -24,6 +24,21 @@ class _AttendanceHistoryScreenState
   List<dynamic>? _records;
   bool _loading = false;
   String? _error;
+  bool _autoSelected = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_autoSelected) return;
+    final empAsync = ref.read(employeesProvider);
+    empAsync.whenData((employees) {
+      if (employees.isNotEmpty) {
+        _autoSelected = true;
+        _selectedEmployee = employees.first;
+        _fetch();
+      }
+    });
+  }
 
   Future<void> _fetch() async {
     if (_selectedEmployee == null) return;

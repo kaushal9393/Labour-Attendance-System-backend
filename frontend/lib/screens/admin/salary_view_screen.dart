@@ -23,6 +23,21 @@ class _SalaryViewScreenState extends ConsumerState<SalaryViewScreen> {
   SalaryRecord? _salary;
   bool   _loading = false;
   String? _error;
+  bool _autoSelected = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_autoSelected) return;
+    final empAsync = ref.read(employeesProvider);
+    empAsync.whenData((employees) {
+      if (employees.isNotEmpty) {
+        _autoSelected = true;
+        _employee = employees.first;
+        _fetch();
+      }
+    });
+  }
 
   Future<void> _fetch() async {
     if (_employee == null) return;

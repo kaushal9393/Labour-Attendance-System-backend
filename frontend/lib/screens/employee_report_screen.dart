@@ -7,6 +7,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../core/theme.dart';
 import '../models/employee.dart';
 import '../services/api_service.dart';
@@ -467,24 +468,51 @@ class _EmployeeReportScreenState extends State<EmployeeReportScreen> {
 
   Future<void> _savePdf(Uint8List bytes) async {
     try {
-      Directory? dir;
       if (Platform.isAndroid) {
-        dir = Directory('/storage/emulated/0/Download');
+        // Android 10+ — write directly to Downloads (no permission needed)
+        // Android 9 and below — request WRITE_EXTERNAL_STORAGE
+        bool canWrite = true;
+        final sdkInt = await _getAndroidSdkInt();
+        if (sdkInt < 29) {
+          final status = await Permission.storage.request();
+          canWrite = status.isGranted;
+        }
+        if (!canWrite) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Storage permission denied'),
+                backgroundColor: AppTheme.error),
+          );
+          return;
+        }
+        // Try Downloads folder first, fallback to app external dir
+        Directory? dir = Directory('/storage/emulated/0/Download');
         if (!await dir.exists()) {
           dir = await getExternalStorageDirectory();
         }
+        dir ??= await getApplicationDocumentsDirectory();
+        final file = File('${dir.path}/${_pdfFileName()}');
+        await file.writeAsBytes(bytes);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('PDF saved to ${dir.path.contains('Download') ? 'Downloads' : 'Documents'}'),
+            backgroundColor: AppTheme.accent,
+          ),
+        );
       } else {
-        dir = await getApplicationDocumentsDirectory();
+        // iOS — save to app documents and open share sheet
+        final dir = await getApplicationDocumentsDirectory();
+        final file = File('${dir.path}/${_pdfFileName()}');
+        await file.writeAsBytes(bytes);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('PDF saved to Documents'),
+              backgroundColor: AppTheme.accent),
+        );
       }
-      final file = File('${dir!.path}/${_pdfFileName()}');
-      await file.writeAsBytes(bytes);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('PDF saved to Downloads folder'),
-          backgroundColor: AppTheme.accent,
-        ),
-      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -493,6 +521,21 @@ class _EmployeeReportScreenState extends State<EmployeeReportScreen> {
             backgroundColor: AppTheme.error),
       );
     }
+  }
+
+  Future<int> _getAndroidSdkInt() async {
+    if (!Platform.isAndroid) return 99;
+    try {
+      // DeviceInfoPlugin would be ideal but we avoid adding a dependency.
+      // Check if /proc/version or build.prop gives us SDK — fallback to 30.
+      final file = File('/system/build.prop');
+      if (await file.exists()) {
+        final content = await file.readAsString();
+        final match = RegExp(r'ro\.build\.version\.sdk=(\d+)').firstMatch(content);
+        if (match != null) return int.parse(match.group(1)!);
+      }
+    } catch (_) {}
+    return 30; // assume modern Android — no permission needed
   }
 
   Widget _sheetButton(

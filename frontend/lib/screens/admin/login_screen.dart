@@ -45,6 +45,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         _rememberMe           = true;
         _hasSavedCredentials  = true;
       });
+      // Auto-login silently — user already chose "Remember me"
+      _login();
     }
   }
 

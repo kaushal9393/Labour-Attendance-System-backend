@@ -11,30 +11,21 @@ router = APIRouter(prefix="/api/auth", tags=["Auth"])
 
 @router.post("/login", response_model=LoginResponse)
 async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
-    # 1. Find company by code
-    company_row = await db.execute(
-        text("SELECT id, name FROM companies WHERE company_code = :code"),
-        {"code": payload.company_code},
-    )
-    company = company_row.fetchone()
-    if not company:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid company code")
-
-    company_id, company_name = company
-
-    # 2. Find admin by email + company
-    admin_row = await db.execute(
+    # Single JOIN — fetch company + admin in one DB round trip
+    row = await db.execute(
         text(
-            "SELECT id, name, password_hash FROM admins "
-            "WHERE email = :email AND company_id = :cid"
+            "SELECT a.id, a.name, a.password_hash, c.id, c.name "
+            "FROM admins a "
+            "JOIN companies c ON c.id = a.company_id "
+            "WHERE c.company_code = :code AND a.email = :email"
         ),
-        {"email": payload.email, "cid": company_id},
+        {"code": payload.company_code, "email": payload.email},
     )
-    admin = admin_row.fetchone()
-    if not admin:
+    record = row.fetchone()
+    if not record:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
-    admin_id, admin_name, password_hash = admin
+    admin_id, admin_name, password_hash, company_id, company_name = record
 
     # 3. Verify password
     if not verify_password(payload.password, password_hash):

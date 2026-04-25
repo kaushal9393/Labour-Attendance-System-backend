@@ -40,8 +40,8 @@ RUN pip install --no-cache-dir \
     Cython \
     insightface==0.7.3
 
-# Strip heavy optional packages insightface pulled (keep onnx — insightface needs it)
-RUN pip uninstall -y scipy scikit-learn scikit-image matplotlib albumentations \
+# Strip only truly unused heavy packages (keep skimage/onnx — insightface needs them)
+RUN pip uninstall -y scipy scikit-learn matplotlib albumentations \
     imageio tifffile lazy_loader || true
 
 COPY . .

@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme.dart';
 import '../../core/constants.dart';
 import '../../services/api_service.dart';
+import '../../services/cache_service.dart';
 import '../../providers/auth_provider.dart';
 
 class AdminSettingsScreen extends ConsumerStatefulWidget {
@@ -34,32 +35,42 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
     _loadSettings();
   }
 
+  void _applySettings(Map<String, dynamic> d) {
+    final start = (d['work_start_time'] as String).split(':');
+    final end   = (d['work_end_time']   as String).split(':');
+    _startTime     = TimeOfDay(hour: int.parse(start[0]), minute: int.parse(start[1]));
+    _endTime       = TimeOfDay(hour: int.parse(end[0]),   minute: int.parse(end[1]));
+    _lateThreshold = d['late_threshold_minutes'];
+    _workDays      = d['working_days_per_week'];
+    _ciStart = _parseTod(d['checkin_window_start'])  ?? _ciStart;
+    _ciEnd   = _parseTod(d['checkin_window_end'])    ?? _ciEnd;
+    _coStart = _parseTod(d['checkout_window_start']) ?? _coStart;
+    _coEnd   = _parseTod(d['checkout_window_end'])   ?? _coEnd;
+  }
+
   Future<void> _loadSettings() async {
-    setState(() => _loading = true);
+    // Show cached data instantly — no loading spinner on repeat visits
+    final cached = await CacheService.get('settings');
+    if (cached != null) {
+      setState(() { _applySettings(cached as Map<String, dynamic>); _loading = false; });
+    } else {
+      setState(() => _loading = true);
+    }
+
     try {
       final resp = await ApiService().getSettings();
       final d = resp.data as Map<String, dynamic>;
-      final start = (d['work_start_time'] as String).split(':');
-      final end   = (d['work_end_time']   as String).split(':');
-      setState(() {
-        _startTime     = TimeOfDay(hour: int.parse(start[0]), minute: int.parse(start[1]));
-        _endTime       = TimeOfDay(hour: int.parse(end[0]),   minute: int.parse(end[1]));
-        _lateThreshold = d['late_threshold_minutes'];
-        _workDays      = d['working_days_per_week'];
-        _ciStart = _parseTod(d['checkin_window_start'])  ?? _ciStart;
-        _ciEnd   = _parseTod(d['checkin_window_end'])    ?? _ciEnd;
-        _coStart = _parseTod(d['checkout_window_start']) ?? _coStart;
-        _coEnd   = _parseTod(d['checkout_window_end'])   ?? _coEnd;
-        _loading       = false;
-      });
+      await CacheService.save('settings', d);
+      if (mounted) setState(() { _applySettings(d); _loading = false; });
     } catch (_) {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
+      await CacheService.remove('settings');
       await ApiService().updateSettings({
         'work_start_time':         '${_startTime.hour.toString().padLeft(2,'0')}:${_startTime.minute.toString().padLeft(2,'0')}:00',
         'work_end_time':           '${_endTime.hour.toString().padLeft(2,'0')}:${_endTime.minute.toString().padLeft(2,'0')}:00',

@@ -4,6 +4,7 @@ from sqlalchemy import text
 
 from core.database import get_db
 from core.security import get_current_user
+from core.cache import cache
 from models.schemas import SettingsResponse, SettingsUpdate
 
 router = APIRouter(prefix="/api/settings", tags=["Settings"])
@@ -15,6 +16,11 @@ async def get_settings(
     user: dict         = Depends(get_current_user),
 ):
     company_id = user["company_id"]
+    cache_key = f"settings_{company_id}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     row = await db.execute(
         text(
             "SELECT id, company_id, work_start_time, work_end_time, "
@@ -28,13 +34,15 @@ async def get_settings(
     s = row.fetchone()
     if not s:
         raise HTTPException(status_code=404, detail="Settings not found")
-    return SettingsResponse(
+    result = SettingsResponse(
         id=s[0], company_id=s[1],
         work_start_time=s[2], work_end_time=s[3],
         late_threshold_minutes=s[4], working_days_per_week=s[5],
         checkin_window_start=s[6], checkin_window_end=s[7],
         checkout_window_start=s[8], checkout_window_end=s[9],
     )
+    cache.set(cache_key, result, ttl_seconds=300)
+    return result
 
 
 @router.put("", response_model=SettingsResponse)
@@ -63,6 +71,7 @@ async def update_settings(
             updates,
         )
         await db.commit()
+        cache.invalidate(f"settings_{company_id}")
 
     return await get_settings(db=db, user=user)
 

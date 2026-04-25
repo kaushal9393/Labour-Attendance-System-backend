@@ -14,7 +14,7 @@ WORKDIR /app
 
 COPY requirements.txt .
 
-# Install everything except insightface first
+# Install all deps — onnxruntime already pinned so insightface won't pull a second copy
 RUN pip install --no-cache-dir \
     fastapi==0.111.0 \
     "uvicorn[standard]==0.29.0" \
@@ -34,18 +34,16 @@ RUN pip install --no-cache-dir \
     tqdm \
     requests \
     easydict \
-    Cython
+    Cython \
+    insightface==0.7.3
 
-# Install insightface — numpy/Cython already present so C extensions compile fine.
-# Then strip the heavy optional packages it may have pulled.
-RUN pip install --no-cache-dir insightface==0.7.3 \
-    && pip uninstall -y scipy scikit-learn scikit-image matplotlib albumentations \
-       onnx imageio networkx tifffile lazy_loader || true
+# Strip heavy optional packages insightface may have pulled (NOT onnx — insightface needs it)
+RUN pip uninstall -y scipy scikit-learn scikit-image matplotlib albumentations \
+    imageio tifffile lazy_loader || true
 
 COPY . .
 
-# Pre-download InsightFace buffalo_sc model into the image so there's no
-# runtime download on Railway (which can time out or fail).
+# Pre-download buffalo_sc model into the image — avoids runtime download on Railway
 RUN python -c "\
 from insightface.app import FaceAnalysis; \
 import numpy as np; \

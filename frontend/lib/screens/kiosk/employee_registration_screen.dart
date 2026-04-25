@@ -1,14 +1,13 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
 import 'package:dio/dio.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
+import '../../services/face_helper.dart';
 
 class EmployeeRegistrationScreen extends StatefulWidget {
   final bool fromAdmin;
@@ -69,15 +68,8 @@ class _EmployeeRegistrationScreenState
   }
 
   List<String> get _photosForApi {
-    if (_photos.length < 9) return _photos;
-    final front = _photos.sublist(0, 3);
-    final left  = _photos.sublist(3, 6);
-    final right = _photos.sublist(6, 9);
-    return [
-      ...List.generate(9, (i) => front[i % 3]),
-      ...List.generate(8, (i) => left[i % 3]),
-      ...List.generate(8, (i) => right[i % 3]),
-    ];
+    // Send exactly the 9 ML-Kit-cropped photos (3 front, 3 left, 3 right)
+    return _photos;
   }
 
   String get _angleLabel => ['FRONT', 'LEFT 30°', 'RIGHT 30°'][_currentAngle];
@@ -124,9 +116,10 @@ class _EmployeeRegistrationScreenState
     HapticFeedback.lightImpact();
     try {
       final xFile = await _camera!.takePicture();
-      final bytes = await xFile.readAsBytes();
-      final b64   = await _compressToBase64(bytes);
-      if (b64.length < 2000) {
+      // ML Kit: detect face, crop to 224×224 on device
+      final b64 = await cropFaceToBase64(xFile);
+      if (b64 == null) {
+        // No face detected — skip this frame, try again next tick
         if (mounted) setState(() => _capturing = false);
         return;
       }
@@ -141,13 +134,6 @@ class _EmployeeRegistrationScreenState
     } catch (_) {
       if (mounted) setState(() => _capturing = false);
     }
-  }
-
-  static Future<String> _compressToBase64(Uint8List bytes) async {
-    final decoded = img.decodeImage(bytes);
-    if (decoded == null) return base64Encode(bytes);
-    final resized = img.copyResize(decoded, width: 320, height: 320);
-    return base64Encode(img.encodeJpg(resized, quality: 75));
   }
 
   void _goToDetails() {

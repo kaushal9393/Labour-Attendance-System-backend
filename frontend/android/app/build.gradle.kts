@@ -31,6 +31,11 @@ android {
         versionName = flutter.versionName
     }
 
+    aaptOptions {
+        noCompress += "tflite"
+        noCompress += "lite"
+    }
+
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.

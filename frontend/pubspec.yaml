@@ -28,6 +28,9 @@ dependencies:
   # Camera
   camera: ^0.10.5+9
 
+  # On-device face detection (ML Kit) — crops face before sending to server
+  google_mlkit_face_detection: ^0.11.0
+
   # Firebase
   firebase_core: ^2.30.1
   firebase_messaging: ^14.9.1

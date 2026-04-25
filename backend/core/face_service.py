@@ -191,8 +191,8 @@ def process_registration_photos(photos: List[str]) -> dict:
         img = decode_base64_image(p)
         if img is None:
             return None
-        img = _resize_for_embedding(img, 480)
-        return extract_embedding(img)  # uses detection for registration accuracy
+        # Flutter ML Kit already cropped the face to 224×224 — skip server detection
+        return extract_embedding_no_detect(img)
 
     result = {}
     # Process all photos in parallel across all angles

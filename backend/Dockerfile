@@ -1,6 +1,6 @@
 FROM python:3.10-slim
 
-# System deps for OpenCV + InsightFace ONNX
+# System deps
 RUN apt-get update && apt-get install -y \
     libgl1 \
     libglib2.0-0 \
@@ -8,16 +8,15 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     libxrender-dev \
     libgomp1 \
-    gcc \
-    g++ \
+    wget \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY requirements.txt .
 
-# Install all deps including insightface
-# Python 3.10 has pre-built wheels for insightface 0.7.3 (no source compile needed)
+# Install Python deps — no insightface, just onnxruntime directly
 RUN pip install --no-cache-dir \
     fastapi==0.111.0 \
     "uvicorn[standard]==0.29.0" \
@@ -36,24 +35,18 @@ RUN pip install --no-cache-dir \
     onnxruntime==1.17.3 \
     tqdm \
     requests \
-    easydict \
-    Cython \
-    insightface==0.7.3
+    easydict
 
-# Strip only truly unused heavy packages (keep skimage/onnx — insightface needs them)
-RUN pip uninstall -y scipy scikit-learn matplotlib albumentations \
-    imageio tifffile lazy_loader || true
+# Download buffalo_sc ONNX model files (~170MB) at build time
+# det_500m.onnx = face detector, w600k_mbf.onnx = ArcFace recognizer
+RUN mkdir -p /app/models/buffalo_sc && \
+    wget -q "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_sc.zip" \
+         -O /tmp/buffalo_sc.zip && \
+    unzip -o /tmp/buffalo_sc.zip -d /app/models/buffalo_sc && \
+    rm /tmp/buffalo_sc.zip && \
+    ls -lh /app/models/buffalo_sc/
 
 COPY . .
-
-# Pre-download buffalo_sc model into the image — avoids runtime download on Railway
-RUN python -c "\
-from insightface.app import FaceAnalysis; \
-import numpy as np; \
-app = FaceAnalysis(name='buffalo_sc', providers=['CPUExecutionProvider']); \
-app.prepare(ctx_id=0, det_size=(160,160)); \
-print('buffalo_sc model downloaded OK') \
-"
 
 EXPOSE 8080
 CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]

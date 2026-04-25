@@ -1,18 +1,69 @@
-# Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Python
+# ── Python / Backend ───────────────────────────────────────
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.env
+.env.*
+venv/
+.venv/
+env/
+*.log
 
-# IDEs
+# ── Flutter / Frontend ─────────────────────────────────────
+frontend/build/
+frontend/.dart_tool/
+frontend/.flutter-plugins
+frontend/.flutter-plugins-dependencies
+frontend/.packages
+frontend/.pub-cache/
+frontend/.pub/
+frontend/pubspec.lock
+# Keep pubspec.lock for reproducible builds — remove above line if you want it tracked
+
+# Android
+frontend/android/.gradle/
+frontend/android/local.properties
+frontend/android/key.properties
+frontend/android/app/debug/
+frontend/android/app/release/
+frontend/android/app/profile/
+frontend/android/captures/
+*.jks
+*.keystore
+
+# iOS
+frontend/ios/.symlinks/
+frontend/ios/Flutter/Flutter.framework
+frontend/ios/Flutter/Flutter.podspec
+frontend/ios/Flutter/App.framework
+frontend/ios/Flutter/engine/
+frontend/ios/Pods/
+frontend/ios/Runner.xcworkspace/xcshareddata/
+frontend/ios/.generated/
+frontend/ios/Flutter/flutter_export_environment.sh
+
+# Generated
+*.g.dart
+*.freezed.dart
+
+# ── General ────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
 .idea/
-.vscode/
+.vscode/settings.json
+*.iml
+
+# ── Secrets / credentials ──────────────────────────────────
+google-services.json
+GoogleService-Info.plist
+firebase_options.dart
+*.p12
+*.pem

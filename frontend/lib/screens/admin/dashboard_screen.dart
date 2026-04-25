@@ -101,7 +101,7 @@ class DashboardScreen extends ConsumerWidget {
               sliver: SliverGrid(
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 3, crossAxisSpacing: 10,
-                  mainAxisSpacing: 10, childAspectRatio: 0.95,
+                  mainAxisSpacing: 10, childAspectRatio: 0.88,
                 ),
                 delegate: SliverChildBuilderDelegate(
                   (_, __) => const ShimmerBox(width: 100, height: 100),
@@ -118,7 +118,7 @@ class DashboardScreen extends ConsumerWidget {
               sliver: SliverGrid(
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 3, crossAxisSpacing: 10,
-                  mainAxisSpacing: 10, childAspectRatio: 0.95,
+                  mainAxisSpacing: 10, childAspectRatio: 0.88,
                 ),
                 delegate: SliverChildListDelegate([
                   StatCard(

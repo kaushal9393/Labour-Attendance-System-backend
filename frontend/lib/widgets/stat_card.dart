@@ -39,27 +39,28 @@ class StatCard extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            padding: const EdgeInsets.all(7),
+            padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
-            child: Icon(icon, color: c, size: 16),
+            child: Icon(icon, color: c, size: 15),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
             child: Text(value,
                 style: TextStyle(
-                    color: c, fontSize: 26, fontWeight: FontWeight.w800)),
+                    color: c, fontSize: 24, fontWeight: FontWeight.w800)),
           ),
           const SizedBox(height: 2),
           Text(title,
               style: const TextStyle(
                   color: AppTheme.textSecondary,
                   fontSize: 11,
-                  fontWeight: FontWeight.w500)),
+                  fontWeight: FontWeight.w500),
+              overflow: TextOverflow.ellipsis),
         ],
       ),
     );

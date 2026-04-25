@@ -32,8 +32,8 @@ class EmployeeCreate(BaseModel):
     @field_validator('photos')
     @classmethod
     def must_have_enough_photos(cls, v):
-        if len(v) < 9:
-            raise ValueError('At least 9 photos required for face registration (3 per angle)')
+        if len(v) < 3:
+            raise ValueError('At least 3 photos required for face registration (1 per angle)')
         return v
 
 class EmployeeUpdate(BaseModel):

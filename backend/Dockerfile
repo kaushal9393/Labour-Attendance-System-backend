@@ -44,5 +44,15 @@ RUN pip install --no-cache-dir insightface==0.7.3 \
 
 COPY . .
 
+# Pre-download InsightFace buffalo_sc model into the image so there's no
+# runtime download on Railway (which can time out or fail).
+RUN python -c "\
+from insightface.app import FaceAnalysis; \
+import numpy as np; \
+app = FaceAnalysis(name='buffalo_sc', providers=['CPUExecutionProvider']); \
+app.prepare(ctx_id=0, det_size=(160,160)); \
+print('buffalo_sc model downloaded OK') \
+"
+
 EXPOSE 8080
 CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]

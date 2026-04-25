@@ -295,39 +295,37 @@ class _EmployeeRegistrationScreenState
     final progress       = _photos.length / _totalPhotos;
     final photosInAngle  = _allPhotosDone ? 0 : _angleBoundaries[_currentAngle] - _photos.length;
 
-    return SingleChildScrollView(
-      child: Column(children: [
-        // Camera box
-        Container(
-          color: Colors.black,
-          child: AspectRatio(
+    return ColoredBox(
+      color: AppTheme.surface,
+      child: SingleChildScrollView(
+        child: Column(children: [
+          // Camera box
+          AspectRatio(
             aspectRatio: 3 / 4,
             child: Stack(alignment: Alignment.center, children: [
               // Camera feed or done state
               if (_cameraReady && !_allPhotosDone)
-                ClipRect(child: CameraPreview(_camera!))
+                Container(color: Colors.black, child: ClipRect(child: CameraPreview(_camera!)))
               else if (_allPhotosDone)
                 Container(
                   color: AppTheme.accentLight,
                   child: const Center(
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.check_circle_rounded,
-                          color: AppTheme.accent, size: 80),
+                      Icon(Icons.check_circle_rounded, color: AppTheme.accent, size: 80),
                       SizedBox(height: 14),
                       Text('All photos captured!',
-                          style: TextStyle(
-                              color: AppTheme.accent,
-                              fontSize: 22,
-                              fontWeight: FontWeight.w800)),
+                          style: TextStyle(color: AppTheme.accent, fontSize: 22, fontWeight: FontWeight.w800)),
                       SizedBox(height: 6),
                       Text('Moving to details…',
-                          style: TextStyle(
-                              color: AppTheme.textSecondary, fontSize: 14)),
+                          style: TextStyle(color: AppTheme.textSecondary, fontSize: 14)),
                     ]),
                   ),
                 )
               else
-                const Center(child: CircularProgressIndicator(color: AppTheme.accent)),
+                const ColoredBox(
+                  color: AppTheme.surface,
+                  child: Center(child: CircularProgressIndicator(color: AppTheme.accent)),
+                ),
 
               // Animated face ring
               if (!_allPhotosDone)
@@ -336,8 +334,7 @@ class _EmployeeRegistrationScreenState
                   child: CustomPaint(
                     size: Size(MediaQuery.of(context).size.width * 0.58,
                                MediaQuery.of(context).size.width * 0.58),
-                    painter: _FaceRingPainter(
-                        progress: progress, capturing: _capturing),
+                    painter: _FaceRingPainter(progress: progress, capturing: _capturing),
                   ),
                 ),
 
@@ -352,9 +349,7 @@ class _EmployeeRegistrationScreenState
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(_angleLabel,
-                        style: const TextStyle(
-                            color: Colors.white, fontSize: 12,
-                            fontWeight: FontWeight.w700)),
+                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
                   ),
                 ),
 
@@ -369,9 +364,7 @@ class _EmployeeRegistrationScreenState
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text('${_photos.length} / $_totalPhotos',
-                        style: const TextStyle(
-                            color: Colors.white, fontSize: 12,
-                            fontWeight: FontWeight.w700)),
+                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
                   ),
                 ),
 
@@ -382,134 +375,123 @@ class _EmployeeRegistrationScreenState
                 ),
             ]),
           ),
-        ),
 
-        // Progress + instructions
-        Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(children: [
-            // Progress bar
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: LinearProgressIndicator(
-                value: progress,
-                minHeight: 10,
-                backgroundColor: AppTheme.divider,
-                valueColor: const AlwaysStoppedAnimation(AppTheme.accent),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              Text('${_photos.length} / 9 photos',
-                  style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-              Text('${(progress * 100).round()}%',
-                  style: const TextStyle(color: AppTheme.accent,
-                      fontSize: 12, fontWeight: FontWeight.w700)),
-            ]),
-            const SizedBox(height: 16),
-
-            if (!_allPhotosDone) ...[
-              // Instruction card
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppTheme.cardBg,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppTheme.divider),
-                  boxShadow: [BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.03),
-                      blurRadius: 8, offset: const Offset(0, 2))],
+          // Progress + instructions
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(children: [
+              // Progress bar
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 10,
+                  backgroundColor: AppTheme.divider,
+                  valueColor: const AlwaysStoppedAnimation(AppTheme.accent),
                 ),
-                child: Row(children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: const BoxDecoration(
-                        color: AppTheme.accentLight, shape: BoxShape.circle),
-                    child: const Icon(Icons.face_retouching_natural,
-                        color: AppTheme.accent, size: 22),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      const Text('Auto-capturing…',
-                          style: TextStyle(color: AppTheme.textPrimary,
-                              fontWeight: FontWeight.w700, fontSize: 14)),
-                      const SizedBox(height: 3),
-                      Text(_angleInstructions[_currentAngle],
-                          style: const TextStyle(
-                              color: AppTheme.textSecondary, fontSize: 13)),
-                      if (photosInAngle > 0) ...[
-                        const SizedBox(height: 3),
-                        Text('$photosInAngle more for this angle',
-                            style: const TextStyle(color: AppTheme.accent,
-                                fontSize: 11, fontWeight: FontWeight.w600)),
-                      ],
-                    ]),
-                  ),
-                ]),
               ),
-              const SizedBox(height: 14),
-
-              // Angle steps
-              Row(children: List.generate(3, (i) {
-                final done   = _photos.length >= _angleBoundaries[i];
-                final active = _currentAngle == i && !_allPhotosDone;
-                return Expanded(
-                  child: Container(
-                    margin: EdgeInsets.only(right: i < 2 ? 8 : 0),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    decoration: BoxDecoration(
-                      color: done ? AppTheme.accentLight
-                           : active ? AppTheme.surface
-                           : AppTheme.cardBg,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: done ? AppTheme.accent
-                             : active ? AppTheme.accent.withValues(alpha: 0.4)
-                             : AppTheme.divider,
-                      ),
-                    ),
-                    child: Column(children: [
-                      Icon(
-                        done ? Icons.check_circle : Icons.radio_button_unchecked,
-                        color: done ? AppTheme.accent
-                             : active ? AppTheme.accent
-                             : AppTheme.textSecondary,
-                        size: 20,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(['Front', 'Left', 'Right'][i],
-                          style: TextStyle(
-                              color: done || active
-                                  ? AppTheme.textPrimary
-                                  : AppTheme.textSecondary,
-                              fontSize: 11,
-                              fontWeight: done || active
-                                  ? FontWeight.w700
-                                  : FontWeight.normal)),
-                    ]),
-                  ),
-                );
-              })),
-            ],
-
-            if (_allPhotosDone) ...[
+              const SizedBox(height: 8),
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                Text('${_photos.length} / 9 photos',
+                    style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                Text('${(progress * 100).round()}%',
+                    style: const TextStyle(color: AppTheme.accent, fontSize: 12, fontWeight: FontWeight.w700)),
+              ]),
               const SizedBox(height: 16),
-              ElevatedButton.icon(
-                onPressed: _goToDetails,
-                icon: const Icon(Icons.arrow_forward),
-                label: const Text('Continue to Details'),
-              ),
-            ],
-          ]),
-        ),
-      ]),
+
+              if (!_allPhotosDone) ...[
+                // Instruction card
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppTheme.cardBg,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppTheme.divider),
+                    boxShadow: [BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.03),
+                        blurRadius: 8, offset: const Offset(0, 2))],
+                  ),
+                  child: Row(children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: const BoxDecoration(
+                          color: AppTheme.accentLight, shape: BoxShape.circle),
+                      child: const Icon(Icons.face_retouching_natural, color: AppTheme.accent, size: 22),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        const Text('Auto-capturing…',
+                            style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w700, fontSize: 14)),
+                        const SizedBox(height: 3),
+                        Text(_angleInstructions[_currentAngle],
+                            style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+                        if (photosInAngle > 0) ...[
+                          const SizedBox(height: 3),
+                          Text('$photosInAngle more for this angle',
+                              style: const TextStyle(color: AppTheme.accent, fontSize: 11, fontWeight: FontWeight.w600)),
+                        ],
+                      ]),
+                    ),
+                  ]),
+                ),
+                const SizedBox(height: 14),
+
+                // Angle steps
+                Row(children: List.generate(3, (i) {
+                  final done   = _photos.length >= _angleBoundaries[i];
+                  final active = _currentAngle == i && !_allPhotosDone;
+                  return Expanded(
+                    child: Container(
+                      margin: EdgeInsets.only(right: i < 2 ? 8 : 0),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: done ? AppTheme.accentLight : active ? AppTheme.surface : AppTheme.cardBg,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: done ? AppTheme.accent
+                               : active ? AppTheme.accent.withValues(alpha: 0.4)
+                               : AppTheme.divider,
+                        ),
+                      ),
+                      child: Column(children: [
+                        Icon(
+                          done ? Icons.check_circle : Icons.radio_button_unchecked,
+                          color: done ? AppTheme.accent : active ? AppTheme.accent : AppTheme.textSecondary,
+                          size: 20,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(['Front', 'Left', 'Right'][i],
+                            style: TextStyle(
+                                color: done || active ? AppTheme.textPrimary : AppTheme.textSecondary,
+                                fontSize: 11,
+                                fontWeight: done || active ? FontWeight.w700 : FontWeight.normal)),
+                      ]),
+                    ),
+                  );
+                })),
+              ],
+
+              if (_allPhotosDone) ...[
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: _goToDetails,
+                  icon: const Icon(Icons.arrow_forward),
+                  label: const Text('Continue to Details'),
+                ),
+              ],
+            ]),
+          ),
+        ]),
+      ),
     );
   }
 
   // ── Step 2: Employee details form ────────────────────────────
   Widget _buildDetailsStep() {
-    return SingleChildScrollView(
+    return ColoredBox(
+      color: AppTheme.surface,
+      child: SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Form(
         key: _formKey,
@@ -674,6 +656,7 @@ class _EmployeeRegistrationScreenState
           ),
           const SizedBox(height: 40),
         ]),
+      ),
       ),
     );
   }

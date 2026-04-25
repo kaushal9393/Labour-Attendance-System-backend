@@ -90,6 +90,18 @@ async def scan_face(
     else:
         emp_id, emp_name, similarity = result
 
+    # Always verify employee is still active in DB — guards against stale cache
+    status_row = await db.execute(
+        text("SELECT status FROM employees WHERE id = :eid AND company_id = :cid"),
+        {"eid": emp_id, "cid": company_id},
+    )
+    emp_status = status_row.fetchone()
+    if not emp_status or emp_status[0] == "deleted":
+        # Remove from cache so future scans don't hit DB every time
+        face_cache.remove_employee(company_id=company_id, emp_id=emp_id)
+        logger.info(f"[Scan] Rejected deleted employee id={emp_id}")
+        return ScanResponse(success=False, reason="face_not_recognized")
+
     similarity = float(similarity)
     logger.info(
         f"[Scan] Top match: {emp_name} (id={emp_id}) "
@@ -263,6 +275,7 @@ async def today_attendance(
             "FROM attendance a "
             "JOIN employees e ON e.id = a.employee_id "
             "WHERE a.company_id = :cid AND a.attendance_date = :today "
+            "AND e.status != 'deleted' "
             "ORDER BY a.check_in ASC NULLS LAST"
         ),
         {"cid": company_id, "today": today},
@@ -312,6 +325,7 @@ async def monthly_attendance(
             "FROM attendance a "
             "JOIN employees e ON e.id = a.employee_id "
             "WHERE a.employee_id = :eid AND a.company_id = :cid "
+            "AND e.status != 'deleted' "
             "AND EXTRACT(MONTH FROM a.attendance_date) = :month "
             "AND EXTRACT(YEAR  FROM a.attendance_date) = :year "
             "AND a.attendance_date <= :today "

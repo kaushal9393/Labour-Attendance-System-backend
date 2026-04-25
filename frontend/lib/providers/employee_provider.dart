@@ -57,8 +57,15 @@ class EmployeesNotifier extends StateNotifier<AsyncValue<List<Employee>>> {
       }).toList(),
     );
 
-    // Call API in background — no restore on failure, _deletedIds keeps it gone
-    ApiService().deleteEmployee(employeeId).catchError((e) => throw e);
+    // Call API — if it fails, employee stays hidden in UI but retry until server confirms
+    try {
+      await ApiService().deleteEmployee(employeeId);
+    } catch (_) {
+      // Retry once after 3 seconds (server may be waking up on Railway)
+      Future.delayed(const Duration(seconds: 3), () async {
+        try { await ApiService().deleteEmployee(employeeId); } catch (_) {}
+      });
+    }
   }
 }
 

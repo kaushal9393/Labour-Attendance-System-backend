@@ -62,7 +62,8 @@ class EmployeesNotifier extends StateNotifier<AsyncValue<List<Employee>>> {
   }
 }
 
+// No autoDispose — keeps data alive across tab switches, no redundant API calls
 final employeesProvider =
-    StateNotifierProvider.autoDispose<EmployeesNotifier, AsyncValue<List<Employee>>>(
+    StateNotifierProvider<EmployeesNotifier, AsyncValue<List<Employee>>>(
   (_) => EmployeesNotifier(),
 );

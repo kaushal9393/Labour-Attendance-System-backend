@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import '../core/theme.dart';
 import '../models/employee.dart';
 import '../services/api_service.dart';
+import '../services/cache_service.dart';
 
 class EmployeeReportScreen extends StatefulWidget {
   final Employee employee;
@@ -35,24 +36,43 @@ class _EmployeeReportScreenState extends State<EmployeeReportScreen> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    try {
-      final salaryResp = await ApiService().getMonthlySalary(
-        employeeId: widget.employee.id,
-        month: _selectedMonth.month,
-        year: _selectedMonth.year,
-      );
-      final attResp = await ApiService().getMonthlyAttendance(
-        employeeId: widget.employee.id,
-        month: _selectedMonth.month,
-        year: _selectedMonth.year,
-      );
+
+    final salaryKey = 'salary_${widget.employee.id}_${_selectedMonth.year}_${_selectedMonth.month}';
+    final attKey    = 'att_hist_${widget.employee.id}_${_selectedMonth.year}_${_selectedMonth.month}';
+
+    // Show cached data instantly
+    final cachedSalary = await CacheService.get(salaryKey);
+    final cachedAtt    = await CacheService.get(attKey);
+    if (cachedSalary != null && cachedAtt != null) {
       setState(() {
-        _salary = Map<String, dynamic>.from(salaryResp.data as Map);
-        _attendance = attResp.data as List;
-        _loading = false;
+        _salary     = Map<String, dynamic>.from(cachedSalary as Map);
+        _attendance = cachedAtt as List;
+        _loading    = false;
+      });
+    }
+
+    try {
+      final results = await Future.wait([
+        ApiService().getMonthlySalary(
+          employeeId: widget.employee.id,
+          month: _selectedMonth.month,
+          year:  _selectedMonth.year,
+        ),
+        ApiService().getMonthlyAttendance(
+          employeeId: widget.employee.id,
+          month: _selectedMonth.month,
+          year:  _selectedMonth.year,
+        ),
+      ]);
+      await CacheService.save(salaryKey, results[0].data);
+      await CacheService.save(attKey,    results[1].data);
+      if (mounted) setState(() {
+        _salary     = Map<String, dynamic>.from(results[0].data as Map);
+        _attendance = results[1].data as List;
+        _loading    = false;
       });
     } catch (_) {
-      setState(() => _loading = false);
+      if (mounted && _salary == null) { setState(() => _loading = false); }
     }
   }
 

@@ -5,6 +5,7 @@ import '../../core/theme.dart';
 import '../../models/employee.dart';
 import '../../providers/employee_provider.dart';
 import '../../services/api_service.dart';
+import '../../services/cache_service.dart';
 import '../../widgets/shimmer_loader.dart';
 import '../../widgets/error_view.dart';
 
@@ -27,15 +28,25 @@ class _AttendanceHistoryScreenState
   Future<void> _fetch() async {
     if (_selectedEmployee == null) return;
     setState(() { _loading = true; _error = null; });
+
+    final cacheKey = 'att_hist_${_selectedEmployee!.id}_${_selectedDate.year}_${_selectedDate.month}';
+
+    // Show cached instantly
+    final cached = await CacheService.get(cacheKey);
+    if (cached != null) {
+      setState(() { _records = cached as List; _loading = false; });
+    }
+
     try {
       final resp = await ApiService().getMonthlyAttendance(
         employeeId: _selectedEmployee!.id,
         month:      _selectedDate.month,
         year:       _selectedDate.year,
       );
-      setState(() { _records = resp.data as List; _loading = false; });
+      await CacheService.save(cacheKey, resp.data);
+      if (mounted) setState(() { _records = resp.data as List; _loading = false; });
     } catch (e) {
-      setState(() { _error = e.toString(); _loading = false; });
+      if (mounted && _records == null) setState(() { _error = e.toString(); _loading = false; });
     }
   }
 

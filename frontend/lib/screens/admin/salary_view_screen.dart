@@ -6,6 +6,7 @@ import '../../models/employee.dart';
 import '../../models/salary.dart';
 import '../../providers/employee_provider.dart';
 import '../../services/api_service.dart';
+import '../../services/cache_service.dart';
 import '../../widgets/shimmer_loader.dart';
 import '../../widgets/error_view.dart';
 
@@ -25,19 +26,26 @@ class _SalaryViewScreenState extends ConsumerState<SalaryViewScreen> {
 
   Future<void> _fetch() async {
     if (_employee == null) return;
-    setState(() { _loading = true; _error = null; _salary = null; });
+    setState(() { _loading = true; _error = null; });
+
+    final cacheKey = 'salary_${_employee!.id}_${_month.year}_${_month.month}';
+
+    // Show cached data instantly if available
+    final cached = await CacheService.get(cacheKey);
+    if (cached != null) {
+      setState(() { _salary = SalaryRecord.fromJson(cached); _loading = false; });
+    }
+
     try {
       final resp = await ApiService().getMonthlySalary(
         employeeId: _employee!.id,
         month:      _month.month,
         year:       _month.year,
       );
-      setState(() {
-        _salary  = SalaryRecord.fromJson(resp.data);
-        _loading = false;
-      });
+      await CacheService.save(cacheKey, resp.data);
+      if (mounted) setState(() { _salary = SalaryRecord.fromJson(resp.data); _loading = false; });
     } catch (e) {
-      setState(() { _error = e.toString(); _loading = false; });
+      if (mounted && _salary == null) setState(() { _error = e.toString(); _loading = false; });
     }
   }
 

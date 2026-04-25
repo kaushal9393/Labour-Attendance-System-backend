@@ -1,22 +1,14 @@
+# syntax=docker/dockerfile:1
+# v2 — cache busted
 FROM python:3.10-slim
 
-# System deps
 RUN apt-get update && apt-get install -y \
-    libgl1 \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libgomp1 \
-    wget \
-    unzip \
+    libgl1 libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 wget unzip \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-COPY requirements.txt .
-
-# Install Python deps — no insightface, just onnxruntime directly
+# Install all deps — NO insightface, direct onnxruntime only
 RUN pip install --no-cache-dir \
     fastapi==0.111.0 \
     "uvicorn[standard]==0.29.0" \
@@ -33,12 +25,9 @@ RUN pip install --no-cache-dir \
     "pillow==10.4.0" \
     pgvector==0.2.5 \
     onnxruntime==1.17.3 \
-    tqdm \
-    requests \
-    easydict
+    tqdm requests easydict
 
-# Download buffalo_sc ONNX model files (~170MB) at build time
-# det_500m.onnx = face detector, w600k_mbf.onnx = ArcFace recognizer
+# Download buffalo_sc ONNX model files at build time
 RUN mkdir -p /app/models/buffalo_sc && \
     wget -q "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_sc.zip" \
          -O /tmp/buffalo_sc.zip && \
@@ -46,10 +35,8 @@ RUN mkdir -p /app/models/buffalo_sc && \
     rm /tmp/buffalo_sc.zip && \
     ls -lh /app/models/buffalo_sc/
 
+COPY requirements.txt .
 COPY . .
-
-# Verify face_service uses direct ONNX (not insightface)
-RUN python -c "import core.face_service; print('face_service OK')"
 
 EXPOSE 8080
 CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]

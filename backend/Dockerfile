@@ -36,8 +36,11 @@ RUN pip install --no-cache-dir \
     easydict \
     Cython
 
-# Install insightface WITHOUT its heavy optional deps (scipy, sklearn, matplotlib etc.)
-RUN pip install --no-cache-dir --no-deps insightface==0.7.3
+# Install insightface — numpy/Cython already present so C extensions compile fine.
+# Then strip the heavy optional packages it may have pulled.
+RUN pip install --no-cache-dir insightface==0.7.3 \
+    && pip uninstall -y scipy scikit-learn scikit-image matplotlib albumentations \
+       onnx imageio networkx tifffile lazy_loader || true
 
 COPY . .
 

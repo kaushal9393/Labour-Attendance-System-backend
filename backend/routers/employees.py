@@ -172,6 +172,11 @@ async def delete_employee(
         text("UPDATE employees SET status = 'deleted' WHERE id = :eid AND company_id = :cid"),
         {"eid": employee_id, "cid": company_id},
     )
+    # Permanently delete face vectors so this employee can never be scanned again
+    await db.execute(
+        text("DELETE FROM face_vectors WHERE employee_id = :eid"),
+        {"eid": employee_id},
+    )
     await db.commit()
     cache.invalidate(f"employees_list_{company_id}")
     face_cache.remove_employee(company_id=company_id, emp_id=employee_id)

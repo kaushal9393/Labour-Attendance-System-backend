@@ -18,9 +18,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _companyCtrl = TextEditingController();
   final _emailCtrl   = TextEditingController();
   final _passCtrl    = TextEditingController();
-  bool  _obscure              = true;
-  bool  _rememberMe           = false;
-  bool  _hasSavedCredentials  = false;
+  bool  _obscure             = true;
+  bool  _rememberMe          = false;
+  bool  _hasSavedCredentials = false;
 
   static const String _kCompany = 'saved_company_code';
   static const String _kEmail   = 'saved_email';
@@ -39,11 +39,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final pass    = prefs.getString(_kPass);
     if (company != null && email != null && pass != null) {
       setState(() {
-        _companyCtrl.text      = company;
-        _emailCtrl.text        = email;
-        _passCtrl.text         = pass;
-        _rememberMe            = true;
-        _hasSavedCredentials   = true;
+        _companyCtrl.text     = company;
+        _emailCtrl.text       = email;
+        _passCtrl.text        = pass;
+        _rememberMe           = true;
+        _hasSavedCredentials  = true;
       });
     }
   }
@@ -57,8 +57,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       _companyCtrl.clear();
       _emailCtrl.clear();
       _passCtrl.clear();
-      _rememberMe           = false;
-      _hasSavedCredentials  = false;
+      _rememberMe          = false;
+      _hasSavedCredentials = false;
     });
   }
 
@@ -98,12 +98,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final auth = ref.watch(authProvider);
 
     return Scaffold(
-      backgroundColor: AppTheme.primary,
+      backgroundColor: AppTheme.surface,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppTheme.textPrimary),
+          icon: const Icon(Icons.arrow_back_ios_new, color: AppTheme.textPrimary, size: 20),
           onPressed: () async {
             final prefs = await SharedPreferences.getInstance();
             await prefs.remove(AppConstants.keyMode);
@@ -113,162 +113,178 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(28),
+          padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SizedBox(height: 40),
-              // Logo
+              const SizedBox(height: 24),
+
+              // Logo circle
               Center(
                 child: Container(
-                  padding: const EdgeInsets.all(22),
+                  width: 88,
+                  height: 88,
                   decoration: BoxDecoration(
-                    color: AppTheme.accent.withValues(alpha: 0.12),
+                    color: AppTheme.accentLight,
                     shape: BoxShape.circle,
-                    border: Border.all(
-                        color: AppTheme.accent.withValues(alpha: 0.35), width: 2),
+                    border: Border.all(color: AppTheme.accent.withValues(alpha: 0.25), width: 2),
                   ),
-                  child: const Icon(Icons.garage_rounded,
-                      color: AppTheme.accent, size: 56),
+                  child: const Icon(Icons.garage_rounded, color: AppTheme.accent, size: 44),
                 ),
               ),
-              const SizedBox(height: 28),
+              const SizedBox(height: 20),
+
               const Center(
-                child: Text('Admin Login',
+                child: Text('Welcome Back',
                     style: TextStyle(
                         color: AppTheme.textPrimary,
                         fontSize: 26,
-                        fontWeight: FontWeight.bold)),
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.5)),
               ),
+              const SizedBox(height: 6),
               const Center(
-                child: Text('Garage Attendance System',
-                    style: TextStyle(
-                        color: AppTheme.textSecondary, fontSize: 14)),
+                child: Text('Sign in to your admin account',
+                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 14)),
               ),
-              const SizedBox(height: 44),
+              const SizedBox(height: 36),
 
-              // Form
-              Form(
-                key: _formKey,
-                child: Column(children: [
-                  TextFormField(
-                    controller: _companyCtrl,
-                    textCapitalization: TextCapitalization.characters,
-                    decoration: const InputDecoration(
-                      labelText: 'Company Code',
-                      hintText: 'e.g. GARAGE2024',
-                      prefixIcon: Icon(Icons.business),
+              // Card form
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: AppTheme.cardBg,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: AppTheme.divider),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.04),
+                      blurRadius: 16,
+                      offset: const Offset(0, 4),
                     ),
-                    validator: (v) =>
-                        v == null || v.isEmpty ? 'Enter company code' : null,
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _emailCtrl,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(
-                      labelText: 'Email',
-                      prefixIcon: Icon(Icons.email_outlined),
-                    ),
-                    validator: (v) {
-                      if (v == null || v.isEmpty) return 'Enter email';
-                      if (!v.contains('@')) return 'Enter valid email';
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _passCtrl,
-                    obscureText: _obscure,
-                    decoration: InputDecoration(
-                      labelText: 'Password',
-                      prefixIcon: const Icon(Icons.lock_outline),
-                      suffixIcon: IconButton(
-                        icon: Icon(_obscure
-                            ? Icons.visibility_off
-                            : Icons.visibility),
-                        onPressed: () =>
-                            setState(() => _obscure = !_obscure),
+                  ],
+                ),
+                child: Form(
+                  key: _formKey,
+                  child: Column(children: [
+                    TextFormField(
+                      controller: _companyCtrl,
+                      textCapitalization: TextCapitalization.characters,
+                      style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w500),
+                      decoration: const InputDecoration(
+                        labelText: 'Company Code',
+                        hintText: 'e.g. GARAGE2024',
+                        prefixIcon: Icon(Icons.business_outlined),
                       ),
+                      validator: (v) => v == null || v.isEmpty ? 'Enter company code' : null,
                     ),
-                    validator: (v) =>
-                        v == null || v.isEmpty ? 'Enter password' : null,
-                  ),
-                  const SizedBox(height: 4),
+                    const SizedBox(height: 14),
+                    TextFormField(
+                      controller: _emailCtrl,
+                      keyboardType: TextInputType.emailAddress,
+                      style: const TextStyle(color: AppTheme.textPrimary),
+                      decoration: const InputDecoration(
+                        labelText: 'Email',
+                        prefixIcon: Icon(Icons.email_outlined),
+                      ),
+                      validator: (v) {
+                        if (v == null || v.isEmpty) return 'Enter email';
+                        if (!v.contains('@')) return 'Enter valid email';
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 14),
+                    TextFormField(
+                      controller: _passCtrl,
+                      obscureText: _obscure,
+                      style: const TextStyle(color: AppTheme.textPrimary),
+                      decoration: InputDecoration(
+                        labelText: 'Password',
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                            color: AppTheme.textSecondary,
+                          ),
+                          onPressed: () => setState(() => _obscure = !_obscure),
+                        ),
+                      ),
+                      validator: (v) => v == null || v.isEmpty ? 'Enter password' : null,
+                    ),
+                    const SizedBox(height: 8),
 
-                  // Remember me row
-                  Row(
-                    children: [
-                      Checkbox(
-                        value: _rememberMe,
-                        activeColor: AppTheme.accent,
-                        onChanged: (v) =>
-                            setState(() => _rememberMe = v ?? false),
+                    // Remember me
+                    Row(children: [
+                      Transform.scale(
+                        scale: 0.9,
+                        child: Checkbox(
+                          value: _rememberMe,
+                          activeColor: AppTheme.accent,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                          onChanged: (v) => setState(() => _rememberMe = v ?? false),
+                        ),
                       ),
-                      const Text(
-                        'Remember login details',
-                        style: TextStyle(
-                            color: AppTheme.textSecondary, fontSize: 13),
-                      ),
+                      const Text('Remember me',
+                          style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
                       if (_hasSavedCredentials) ...[
                         const Spacer(),
                         TextButton(
                           onPressed: _clearSavedCredentials,
                           style: TextButton.styleFrom(
-                              padding: EdgeInsets.zero,
-                              minimumSize: const Size(0, 32)),
-                          child: const Text(
-                            'Clear saved',
-                            style: TextStyle(
-                                color: AppTheme.error, fontSize: 12),
-                          ),
+                              padding: EdgeInsets.zero, minimumSize: const Size(0, 32)),
+                          child: const Text('Clear saved',
+                              style: TextStyle(color: AppTheme.error, fontSize: 12)),
                         ),
                       ],
-                    ],
-                  ),
-                ]),
+                    ]),
+                  ]),
+                ),
               ),
 
+              // Error
               if (auth.error != null) ...[
                 const SizedBox(height: 16),
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   decoration: BoxDecoration(
-                    color: AppTheme.error.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                        color: AppTheme.error.withValues(alpha: 0.4)),
+                    color: AppTheme.errorLight,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.error.withValues(alpha: 0.3)),
                   ),
                   child: Row(children: [
-                    const Icon(Icons.error_outline,
-                        color: AppTheme.error, size: 18),
+                    const Icon(Icons.error_outline, color: AppTheme.error, size: 18),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(auth.error!,
-                          style: const TextStyle(
-                              color: AppTheme.error, fontSize: 13)),
+                          style: const TextStyle(color: AppTheme.error, fontSize: 13)),
                     ),
                   ]),
                 ),
               ],
 
-              const SizedBox(height: 28),
+              const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: auth.isLoading ? null : _login,
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 54),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
                 child: auth.isLoading
                     ? const SizedBox(
-                        height: 20, width: 20,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white))
-                    : const Text('Login'),
+                        height: 22, width: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
+                    : const Text('Sign In', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
               ),
 
-              const SizedBox(height: 32),
-              TextButton(
-                onPressed: () => context.go('/mode-select'),
-                child: const Text('← Back to Mode Select',
-                    style: TextStyle(color: AppTheme.textSecondary)),
+              const SizedBox(height: 20),
+              Center(
+                child: TextButton(
+                  onPressed: () => context.go('/mode-select'),
+                  child: const Text('← Back to Mode Select',
+                      style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+                ),
               ),
+              const SizedBox(height: 24),
             ],
           ),
         ),

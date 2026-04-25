@@ -106,7 +106,7 @@ class _ManualCheckoutScreenState extends ConsumerState<ManualCheckoutScreen> {
     final employeesAsync = ref.watch(employeesProvider);
 
     return Scaffold(
-      backgroundColor: AppTheme.primary,
+      backgroundColor: AppTheme.surface,
       appBar: AppBar(
         title: const Text('Manual Checkout'),
         backgroundColor: AppTheme.surface,

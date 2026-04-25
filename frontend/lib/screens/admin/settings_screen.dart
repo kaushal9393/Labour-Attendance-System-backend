@@ -161,7 +161,7 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.primary,
+      backgroundColor: AppTheme.surface,
       appBar: AppBar(
           title: const Text('Settings'),
           backgroundColor: AppTheme.surface),

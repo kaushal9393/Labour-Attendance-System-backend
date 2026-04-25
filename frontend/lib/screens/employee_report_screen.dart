@@ -511,10 +511,9 @@ class _EmployeeReportScreenState extends State<EmployeeReportScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.primary,
+      backgroundColor: AppTheme.surface,
       appBar: AppBar(
         title: Text(widget.employee.name),
-        backgroundColor: AppTheme.surface,
       ),
       body: _loading
           ? const Center(
@@ -760,7 +759,7 @@ class _EmployeeReportScreenState extends State<EmployeeReportScreen> {
   Widget _tableHeader() => Container(
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
         decoration: const BoxDecoration(
-          color: Color(0xFF1B4F72),
+          color: AppTheme.accent,
           borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
         ),
         child: Row(children: const [

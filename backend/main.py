@@ -9,6 +9,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from dotenv import load_dotenv
@@ -108,11 +109,11 @@ async def health():
     return {"status": "ok", "service": "Garage Attendance API"}
 
 
-@app.api_route("/ping", methods=["GET", "HEAD"], tags=["Health"])
-async def ping():
-    return {"status": "ok"}
-
-
 @app.api_route("/", methods=["GET", "HEAD"], tags=["Health"])
 async def root():
-    return {"message": "Garage Attendance System API v1.0 — /docs for Swagger UI"}
+    return JSONResponse({"status": "ok"})
+
+
+@app.api_route("/ping", methods=["GET", "HEAD"], tags=["Health"])
+async def ping():
+    return JSONResponse({"status": "ok"})

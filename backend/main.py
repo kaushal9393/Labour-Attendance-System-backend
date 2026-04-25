@@ -94,26 +94,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Routers ───────────────────────────────────────────────────
+# ── Health checks (BEFORE routers) ───────────────────────────
+@app.api_route("/", methods=["GET", "HEAD"], tags=["Health"])
+async def root():
+    return JSONResponse({"status": "ok"})
+
+@app.api_route("/ping", methods=["GET", "HEAD"], tags=["Health"])
+async def ping():
+    return JSONResponse({"status": "ok"})
+
+@app.api_route("/health", methods=["GET", "HEAD"], tags=["Health"])
+async def health():
+    return JSONResponse({"status": "ok", "service": "Garage Attendance API"})
+
+    
+# ── Routers (AFTER health checks) ────────────────────────────
 app.include_router(auth.router)
 app.include_router(employees.router)
 app.include_router(attendance.router)
 app.include_router(salary.router)
 app.include_router(reports.router)
 app.include_router(settings_router.router)
-
-
-# ── Health check ──────────────────────────────────────────────
-@app.get("/health", tags=["Health"])
-async def health():
-    return {"status": "ok", "service": "Garage Attendance API"}
-
-
-@app.api_route("/", methods=["GET", "HEAD"], tags=["Health"])
-async def root():
-    return JSONResponse({"status": "ok"})
-
-
-@app.api_route("/ping", methods=["GET", "HEAD"], tags=["Health"])
-async def ping():
-    return JSONResponse({"status": "ok"})

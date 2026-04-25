@@ -47,33 +47,22 @@ async def scan_face(
         company_id = company[0]
         cache.set(cache_key, company_id, ttl_seconds=3600)
 
-    # Decode once, resize once, reuse for both liveness + embedding
     import cv2
-    from core.face_service import decode_base64_image, extract_embedding
-    from core.face_service import _get_cascade
+    from core.face_service import decode_base64_image, extract_embedding_no_detect
 
     img = decode_base64_image(payload.image)
     if img is None:
         return ScanResponse(success=False, reason="image_decode_failed")
 
-    # Resize to 480px max before any processing — saves ~60% CPU time
+    # Resize to 320px — ArcFace only needs 112x112 internally, 320 is plenty
     h, w = img.shape[:2]
-    if max(h, w) > 480:
-        scale = 480 / max(h, w)
+    if max(h, w) > 320:
+        scale = 320 / max(h, w)
         img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
 
-    # Liveness: try lenient settings first, then strict — reduces false rejects
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    gray = cv2.equalizeHist(gray)  # normalize brightness variations
-    faces_detected = _get_cascade().detectMultiScale(
-        gray, scaleFactor=1.2, minNeighbors=3, minSize=(40, 40)
-    )
-    if len(faces_detected) == 0:
-        logger.info(f"[Scan] Haar cascade found no face for company_id={company_id} — proceeding to ArcFace anyway")
-        # Don't hard-block here — let ArcFace decide. Haar cascade is too strict
-        # on front cameras with slight angle/lighting variance.
-
-    embedding = extract_embedding(img)
+    # Skip face detection on scan — camera already frames the face.
+    # extract_embedding_no_detect runs only ArcFace (~80ms vs ~400ms with detector)
+    embedding = extract_embedding_no_detect(img)
     if embedding is None:
         return ScanResponse(success=False, reason="face_embedding_failed")
 

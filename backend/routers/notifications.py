@@ -1,4 +1,4 @@
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, time as dt_time, timedelta
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
@@ -23,7 +23,7 @@ async def get_notifications(
         {"cid": company_id},
     )
     settings = settings_row.fetchone()
-    work_start      = settings[0] if settings else None  # datetime.time
+    work_start      = _to_time(settings[0]) if settings else None
     late_threshold  = settings[1] if settings else 15
 
     notifications = []
@@ -141,3 +141,18 @@ async def get_notifications(
     notifications.sort(key=lambda n: n["time"], reverse=True)
 
     return {"notifications": notifications}
+
+
+def _to_time(v):
+    if v is None:
+        return None
+    if isinstance(v, dt_time):
+        return v
+    if isinstance(v, timedelta):
+        total = int(v.total_seconds())
+        return dt_time(total // 3600, (total % 3600) // 60, total % 60)
+    try:
+        parts = str(v).split(":")
+        return dt_time(int(parts[0]), int(parts[1]), int(float(parts[2])))
+    except Exception:
+        return None

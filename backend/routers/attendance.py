@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, time as dt_time, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -126,12 +126,12 @@ async def scan_face(
         {"cid": company_id},
     )
     settings = settings_row.fetchone()
-    work_start = settings[0] if settings else None
+    work_start = _to_time(settings[0]) if settings else None
     late_mins  = settings[1] if settings else 15
-    ci_start   = settings[2] if settings else None
-    ci_end     = settings[3] if settings else None
-    co_start   = settings[4] if settings else None
-    co_end     = settings[5] if settings else None
+    ci_start   = _to_time(settings[2]) if settings else None
+    ci_end     = _to_time(settings[3]) if settings else None
+    co_start   = _to_time(settings[4]) if settings else None
+    co_end     = _to_time(settings[5]) if settings else None
 
     # 5. Check existing attendance record for today
     existing = await db.execute(
@@ -413,9 +413,29 @@ async def manual_checkout(
 
 
 # ─── Helpers ──────────────────────────────────────────────────
+def _to_time(v) -> Optional[dt_time]:
+    """Normalise a DB TIME value to datetime.time.
+
+    asyncpg returns PostgreSQL TIME columns as datetime.timedelta, not
+    datetime.time, which makes direct <= comparisons raise TypeError.
+    """
+    if v is None:
+        return None
+    if isinstance(v, dt_time):
+        return v
+    if isinstance(v, timedelta):
+        total = int(v.total_seconds())
+        return dt_time(total // 3600, (total % 3600) // 60, total % 60)
+    # Fallback: try parsing string "HH:MM:SS"
+    try:
+        parts = str(v).split(":")
+        return dt_time(int(parts[0]), int(parts[1]), int(float(parts[2])))
+    except Exception:
+        return None
+
+
 def _determine_status(now: datetime, work_start, late_mins: int) -> str:
     if work_start is None:
         return "present"
-    from datetime import timedelta
     cutoff = datetime.combine(now.date(), work_start) + timedelta(minutes=late_mins)
     return "late" if now > cutoff else "present"

@@ -104,10 +104,14 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
     final picked = await showTimePicker(
       context: context,
       initialTime: isStart ? _startTime : _endTime,
+      initialEntryMode: TimePickerEntryMode.input,
       builder: (ctx, child) => Theme(
         data: Theme.of(ctx).copyWith(
-          colorScheme: const ColorScheme.dark(
-              primary: AppTheme.accent, surface: AppTheme.cardBg),
+          colorScheme: const ColorScheme.light(
+              primary: AppTheme.accent,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: Colors.black87),
         ),
         child: child!,
       ),
@@ -143,10 +147,14 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
     final picked = await showTimePicker(
       context: context,
       initialTime: initial,
+      initialEntryMode: TimePickerEntryMode.input,
       builder: (ctx, child) => Theme(
         data: Theme.of(ctx).copyWith(
-          colorScheme: const ColorScheme.dark(
-              primary: AppTheme.accent, surface: AppTheme.cardBg),
+          colorScheme: const ColorScheme.light(
+              primary: AppTheme.accent,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: Colors.black87),
         ),
         child: child!,
       ),

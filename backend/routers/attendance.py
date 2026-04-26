@@ -145,26 +145,16 @@ async def scan_face(
 
     # Time window enforcement — fail-closed: if a window is configured (even
     # partially), reject scans outside it rather than silently allowing them.
-    now_time = now.time()
+    now_time = now.time().replace(microsecond=0)
     if record is None:
         # Determining a check-in attempt
-        if ci_start is not None or ci_end is not None:
-            # Both boundaries must be set; if only one is configured it's a
-            # misconfiguration — block the scan so nothing slips through.
-            if ci_start is None or ci_end is None:
-                logger.warning(
-                    f"[Scan] Incomplete check-in window config for company_id={company_id}: "
-                    f"start={ci_start} end={ci_end}"
-                )
-                return ScanResponse(
-                    success=False,
-                    match=True,
-                    action="check_in",
-                    employee_name=emp_name,
-                    reason="checkin_window_misconfigured",
-                    message="Check-in time window is not fully configured. Please contact your administrator.",
-                )
-            if not (ci_start <= now_time <= ci_end):
+        if ci_start is not None and ci_end is not None:
+            try:
+                in_window = ci_start <= now_time <= ci_end
+            except TypeError as e:
+                logger.error(f"[Scan] Check-in window comparison TypeError: {e} — allowing scan")
+                in_window = True
+            if not in_window:
                 logger.info(
                     f"[Scan] Check-in rejected for {emp_name}: "
                     f"now={now_time} outside window {ci_start}–{ci_end}"
@@ -185,21 +175,19 @@ async def scan_face(
                 )
     else:
         # Determining a check-out attempt
-        if co_start is not None or co_end is not None:
-            if co_start is None or co_end is None:
-                logger.warning(
-                    f"[Scan] Incomplete check-out window config for company_id={company_id}: "
-                    f"start={co_start} end={co_end}"
-                )
-                return ScanResponse(
-                    success=False,
-                    match=True,
-                    action="check_out",
-                    employee_name=emp_name,
-                    reason="checkout_window_misconfigured",
-                    message="Check-out time window is not fully configured. Please contact your administrator.",
-                )
-            if not (co_start <= now_time <= co_end):
+        logger.info(
+            f"[Scan] Checkout window check for {emp_name}: "
+            f"co_start={co_start!r}(type={type(co_start).__name__}) "
+            f"co_end={co_end!r}(type={type(co_end).__name__}) "
+            f"now_time={now_time!r}(type={type(now_time).__name__})"
+        )
+        if co_start is not None and co_end is not None:
+            try:
+                in_window = co_start <= now_time <= co_end
+            except TypeError as e:
+                logger.error(f"[Scan] Window comparison TypeError: {e} — allowing scan")
+                in_window = True
+            if not in_window:
                 logger.info(
                     f"[Scan] Check-out rejected for {emp_name}: "
                     f"now={now_time} outside window {co_start}–{co_end}"

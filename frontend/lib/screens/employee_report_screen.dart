@@ -87,30 +87,47 @@ class _EmployeeReportScreenState extends State<EmployeeReportScreen> {
   List<Map<String, dynamic>> _buildDailyRows() {
     final daysInMonth =
         DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0).day;
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+
     final byDate = <int, dynamic>{};
     for (final r in _attendance) {
       final d = DateTime.parse(r['attendance_date']).day;
       byDate[d] = r;
     }
+
     final rows = <Map<String, dynamic>>[];
     for (int d = 1; d <= daysInMonth; d++) {
-      final rec = byDate[d];
       final date = DateTime(_selectedMonth.year, _selectedMonth.month, d);
-      if (rec != null) {
-        rows.add({
-          'date': date,
-          'check_in': rec['check_in'],
-          'check_out': rec['check_out'],
-          'status': (rec['status'] as String).toUpperCase(),
-        });
+      final rec  = byDate[d];
+
+      final bool isFuture = date.isAfter(todayDate);
+      final bool isToday  = date.isAtSameMomentAs(todayDate);
+
+      String status;
+      if (isFuture) {
+        status = 'NOT MARKED';
+      } else if (rec != null) {
+        final hasIn  = rec['check_in']  != null;
+        final hasOut = rec['check_out'] != null;
+        if (hasIn && hasOut) {
+          // Keep original status (present / late) from backend
+          status = (rec['status'] as String).toUpperCase();
+        } else if (hasIn && !hasOut) {
+          status = isToday ? 'CHECKED-IN' : 'INCOMPLETE';
+        } else {
+          status = isToday ? 'NOT MARKED' : 'ABSENT';
+        }
       } else {
-        rows.add({
-          'date': date,
-          'check_in': null,
-          'check_out': null,
-          'status': 'ABSENT',
-        });
+        status = isToday ? 'NOT MARKED' : 'ABSENT';
       }
+
+      rows.add({
+        'date':      date,
+        'check_in':  rec?['check_in'],
+        'check_out': rec?['check_out'],
+        'status':    status,
+      });
     }
     return rows;
   }
@@ -126,12 +143,12 @@ class _EmployeeReportScreenState extends State<EmployeeReportScreen> {
 
   Color _statusColor(String status) {
     switch (status) {
-      case 'PRESENT':
-        return const Color(0xFF0F6E56);
-      case 'LATE':
-        return const Color(0xFFF57C00);
-      default:
-        return const Color(0xFFE74C3C);
+      case 'PRESENT':    return const Color(0xFF0F6E56);
+      case 'LATE':       return const Color(0xFFF57C00);
+      case 'ABSENT':     return const Color(0xFFE74C3C);
+      case 'INCOMPLETE': return const Color(0xFFF57C00);
+      case 'CHECKED-IN': return const Color(0xFF1565C0);
+      default:           return const Color(0xFF9E9E9E); // NOT MARKED
     }
   }
 
@@ -296,11 +313,7 @@ class _EmployeeReportScreenState extends State<EmployeeReportScreen> {
                     _td(_fmtTime(rows[i]['check_in'])),
                     _td(_fmtTime(rows[i]['check_out'])),
                     _td(rows[i]['status'],
-                        color: rows[i]['status'] == 'PRESENT'
-                            ? green
-                            : rows[i]['status'] == 'LATE'
-                                ? orange
-                                : red,
+                        color: _pdfStatusColor(rows[i]['status'] as String, green, orange, red),
                         bold: true),
                   ],
                 ),
@@ -324,6 +337,16 @@ class _EmployeeReportScreenState extends State<EmployeeReportScreen> {
       ),
     );
     return doc.save();
+  }
+
+  PdfColor _pdfStatusColor(String status, PdfColor green, PdfColor orange, PdfColor red) {
+    switch (status) {
+      case 'PRESENT':    return green;
+      case 'LATE':       return orange;
+      case 'INCOMPLETE': return orange;
+      case 'ABSENT':     return red;
+      default:           return PdfColors.grey600; // CHECKED-IN / NOT MARKED
+    }
   }
 
   pw.Widget _kv(String k, String v) => pw.Padding(

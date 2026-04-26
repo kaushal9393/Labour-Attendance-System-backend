@@ -26,6 +26,14 @@ class _FaceScanScreenState extends State<FaceScanScreen>
   Timer? _dotTimer;
   int _dotCount = 0;
 
+  // Liveness — blink detection state
+  bool   _livenessVerified = false;
+  double _prevLeftEye      = 1.0;
+  double _prevRightEye     = 1.0;
+  int    _blinkCount       = 0;
+  static const double _eyeClosedThreshold = 0.35;
+  static const double _eyeOpenThreshold   = 0.75;
+
   @override
   void initState() {
     super.initState();
@@ -48,13 +56,62 @@ class _FaceScanScreenState extends State<FaceScanScreen>
     if (!mounted) return;
     setState(() => _cameraReady = true);
 
-    _autoCapture = Timer.periodic(const Duration(milliseconds: 1500), (_) {
-      if (!_isScanning && _cameraReady) _capture();
+    // Fast liveness-check loop — runs every 400 ms, no server call yet
+    _autoCapture = Timer.periodic(const Duration(milliseconds: 400), (_) {
+      if (!_isScanning && _cameraReady) _livenessFrame();
     });
   }
 
-  Future<void> _capture() async {
+  /// Called every 400 ms to check for a blink. Once a blink is confirmed,
+  /// triggers the actual server scan.
+  Future<void> _livenessFrame() async {
     if (_camera == null || _isScanning) return;
+    try {
+      final xFile = await _camera!.takePicture();
+      final result = await detectFaceFrame(xFile);
+
+      if (!result.faceDetected) {
+        if (mounted) setState(() => _statusText = 'Position your face in the circle');
+        return;
+      }
+
+      if (!_livenessVerified) {
+        // Show prompt so user knows what to do
+        if (mounted) setState(() => _statusText = 'Please blink to verify');
+
+        final leftEye  = result.leftEyeOpen  ?? 1.0;
+        final rightEye = result.rightEyeOpen ?? 1.0;
+
+        // Blink = both eyes were open, now both are closed
+        final bothWereOpen   = _prevLeftEye  > _eyeOpenThreshold &&
+                               _prevRightEye > _eyeOpenThreshold;
+        final bothNowClosed  = leftEye  < _eyeClosedThreshold &&
+                               rightEye < _eyeClosedThreshold;
+
+        if (bothWereOpen && bothNowClosed) {
+          _blinkCount++;
+        }
+
+        _prevLeftEye  = leftEye;
+        _prevRightEye = rightEye;
+
+        if (_blinkCount >= 1) {
+          _livenessVerified = true;
+          if (mounted) setState(() => _statusText = 'Blink detected! Scanning…');
+          await _capture(result.base64Image!);
+        }
+        return;
+      }
+
+      // Already verified — proceed to scan directly
+      if (result.base64Image != null) await _capture(result.base64Image!);
+    } catch (_) {
+      // Silent retry
+    }
+  }
+
+  Future<void> _capture(String b64) async {
+    if (_isScanning) return;
     HapticFeedback.mediumImpact();
     _dotCount = 0;
     setState(() { _isScanning = true; _statusText = 'Scanning.'; });
@@ -66,20 +123,7 @@ class _FaceScanScreenState extends State<FaceScanScreen>
     });
 
     try {
-      final xFile = await _camera!.takePicture();
-
-      // ML Kit: detect face and crop to 224×224 on device
-      final b64 = await cropFaceToBase64(xFile);
-      if (b64 == null) {
-        // No face detected — retry silently
-        _dotTimer?.cancel();
-        if (mounted) {
-          setState(() { _isScanning = false; _statusText = 'Position your face in the circle'; });
-        }
-        return;
-      }
-
-      // Send cropped face to server — server runs only ArcFace (no detection)
+      // Send cropped face to server
       final response = await ApiService().scanFace(b64, AppConstants.companyCode);
       final data     = response.data as Map<String, dynamic>;
 
@@ -87,6 +131,11 @@ class _FaceScanScreenState extends State<FaceScanScreen>
       if (!mounted) return;
 
       if (data['success'] == true) {
+        // Reset liveness for next person
+        _livenessVerified = false;
+        _blinkCount       = 0;
+        _prevLeftEye      = 1.0;
+        _prevRightEye     = 1.0;
         context.go('/kiosk/success', extra: {
           'employee_name': data['employee_name'],
           'time':          data['time'],
@@ -94,6 +143,8 @@ class _FaceScanScreenState extends State<FaceScanScreen>
         });
       } else if (data['reason'] == 'outside_checkin_window' ||
                  data['reason'] == 'outside_checkout_window') {
+        _livenessVerified = false;
+        _blinkCount       = 0;
         context.go('/kiosk/outside-window', extra: {
           'employee_name': data['employee_name'],
           'action':        data['action'],
@@ -101,6 +152,8 @@ class _FaceScanScreenState extends State<FaceScanScreen>
           'window_end':    data['window_end'],
         });
       } else {
+        _livenessVerified = false;
+        _blinkCount       = 0;
         context.go('/kiosk/failed');
       }
     } catch (_) {
@@ -201,8 +254,10 @@ class _FaceScanScreenState extends State<FaceScanScreen>
                     style: const TextStyle(color: Colors.white, fontSize: 18,
                         fontWeight: FontWeight.w500)),
                 const SizedBox(height: 8),
-                const Text('Auto-detecting face…',
-                    style: TextStyle(color: Colors.white54, fontSize: 13)),
+                Text(
+                  _livenessVerified ? 'Liveness verified ✓' : 'Blink once to verify you\'re real',
+                  style: const TextStyle(color: Colors.white54, fontSize: 13),
+                ),
               ],
             ),
           ),

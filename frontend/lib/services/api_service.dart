@@ -165,4 +165,7 @@ class ApiService {
 
   Future<Response> updateSettings(Map<String, dynamic> body) =>
       _dio.put('/settings', data: body);
+
+  // ── Notifications ─────────────────────────────────────────────
+  Future<Response> getNotifications() => _dio.get('/notifications');
 }

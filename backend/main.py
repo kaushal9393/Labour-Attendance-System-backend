@@ -19,7 +19,7 @@ import asyncio
 from core.database import ping_db, AsyncSessionLocal
 from core.face_service import warmup_models
 from core import face_cache
-from routers import auth, employees, attendance, salary, reports, settings as settings_router
+from routers import auth, employees, attendance, salary, reports, settings as settings_router, notifications as notifications_router
 
 load_dotenv()
 
@@ -149,3 +149,4 @@ app.include_router(attendance.router)
 app.include_router(salary.router)
 app.include_router(reports.router)
 app.include_router(settings_router.router)
+app.include_router(notifications_router.router)

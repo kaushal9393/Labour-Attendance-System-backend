@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -6,8 +5,6 @@ import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 import '../core/theme.dart';
 import '../models/employee.dart';
 import '../services/api_service.dart';
@@ -461,168 +458,11 @@ class _EmployeeReportScreenState extends State<EmployeeReportScreen> {
     }
 
     if (!mounted) return;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppTheme.cardBg,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Employee Report',
-                  style: TextStyle(
-                      color: AppTheme.textPrimary,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700)),
-              const SizedBox(height: 4),
-              Text(
-                  '${widget.employee.name} — ${DateFormat('MMMM yyyy').format(_selectedMonth)}',
-                  style: const TextStyle(
-                      color: AppTheme.textSecondary, fontSize: 13)),
-              const Divider(height: 26, color: AppTheme.divider),
-              _sheetButton(
-                icon: Icons.share,
-                title: 'Share PDF',
-                subtitle: 'Send via WhatsApp, Gmail, Drive…',
-                onTap: () async {
-                  Navigator.pop(ctx);
-                  await Printing.sharePdf(
-                      bytes: bytes, filename: _pdfFileName());
-                },
-              ),
-              const SizedBox(height: 10),
-              _sheetButton(
-                icon: Icons.download,
-                title: 'Download PDF',
-                subtitle: 'Save to Downloads folder',
-                onTap: () async {
-                  Navigator.pop(ctx);
-                  await _savePdf(bytes);
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    // Use the system share sheet — works on all Android versions with zero
+    // storage permissions. User can pick "Save to Downloads", Drive, WhatsApp, etc.
+    await Printing.sharePdf(bytes: bytes, filename: _pdfFileName());
   }
 
-  Future<void> _savePdf(Uint8List bytes) async {
-    try {
-      final String fileName = _pdfFileName();
-
-      if (Platform.isAndroid) {
-        // On Android 9 (SDK 28) and below request legacy storage permission.
-        // On Android 10+ scoped storage applies — no permission needed for
-        // getExternalStorageDirectory() (app-specific external dir).
-        final sdkInt = await _androidSdkVersion();
-        if (sdkInt <= 28) {
-          final status = await Permission.storage.request();
-          if (!status.isGranted) {
-            if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                  content: Text('Storage permission denied. Please allow it in App Settings.'),
-                  backgroundColor: AppTheme.error),
-            );
-            return;
-          }
-        }
-
-        // Android 10+ can write to the public Downloads folder directly.
-        // Android 9 uses the app-specific external dir as a safe fallback.
-        Directory? saveDir;
-        if (sdkInt >= 29) {
-          saveDir = Directory('/storage/emulated/0/Download');
-          if (!await saveDir.exists()) {
-            saveDir = await getExternalStorageDirectory();
-          }
-        } else {
-          saveDir = await getExternalStorageDirectory();
-        }
-        saveDir ??= await getApplicationDocumentsDirectory();
-
-        final file = File('${saveDir.path}/$fileName');
-        await file.writeAsBytes(bytes, flush: true);
-
-        if (!mounted) return;
-        final location = saveDir.path.contains('Download') ? 'Downloads' : 'Documents';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('PDF saved to $location/$fileName'),
-            backgroundColor: AppTheme.accent,
-            duration: const Duration(seconds: 4),
-          ),
-        );
-      } else {
-        // iOS: write to documents then open system share sheet so the user
-        // can save to Files, AirDrop, etc.
-        final dir  = await getApplicationDocumentsDirectory();
-        final file = File('${dir.path}/$fileName');
-        await file.writeAsBytes(bytes, flush: true);
-        await Printing.sharePdf(bytes: bytes, filename: fileName);
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('Download failed: $e'),
-            backgroundColor: AppTheme.error,
-            duration: const Duration(seconds: 5)),
-      );
-    }
-  }
-
-  /// Returns the Android SDK version by reading the system property file.
-  /// Falls back to 30 (Android 10) if unreadable — safe default.
-  Future<int> _androidSdkVersion() async {
-    if (!Platform.isAndroid) return 99;
-    try {
-      final result = await Process.run('getprop', ['ro.build.version.sdk']);
-      final parsed = int.tryParse(result.stdout.toString().trim());
-      if (parsed != null) return parsed;
-    } catch (_) {}
-    return 30;
-  }
-
-  Widget _sheetButton(
-          {required IconData icon,
-          required String title,
-          required String subtitle,
-          required VoidCallback onTap}) =>
-      Material(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Row(children: [
-              Icon(icon, color: AppTheme.accent, size: 26),
-              const SizedBox(width: 14),
-              Expanded(
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                    Text(title,
-                        style: const TextStyle(
-                            color: AppTheme.textPrimary,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 2),
-                    Text(subtitle,
-                        style: const TextStyle(
-                            color: AppTheme.textSecondary, fontSize: 12)),
-                  ])),
-            ]),
-          ),
-        ),
-      );
 
   @override
   Widget build(BuildContext context) {

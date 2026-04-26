@@ -1,7 +1,9 @@
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -458,9 +460,62 @@ class _EmployeeReportScreenState extends State<EmployeeReportScreen> {
     }
 
     if (!mounted) return;
-    // Use the system share sheet — works on all Android versions with zero
-    // storage permissions. User can pick "Save to Downloads", Drive, WhatsApp, etc.
     await Printing.sharePdf(bytes: bytes, filename: _pdfFileName());
+  }
+
+  Future<void> _onDownloadTap() async {
+    if (_salary == null) return;
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Building PDF…'),
+          duration: Duration(seconds: 3),
+          backgroundColor: AppTheme.accent,
+        ),
+      );
+    }
+
+    Uint8List bytes;
+    try {
+      bytes = await _buildPdf();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to build PDF: $e'), backgroundColor: AppTheme.error),
+      );
+      return;
+    }
+
+    try {
+      // getExternalStorageDirectory() → app-specific external dir
+      // (Android/data/com.xxx/files/) — always writable, no permission
+      // needed on any Android version. Visible in Files app.
+      final dir = Platform.isAndroid
+          ? (await getExternalStorageDirectory() ?? await getApplicationDocumentsDirectory())
+          : await getApplicationDocumentsDirectory();
+
+      final file = File('${dir.path}/${_pdfFileName()}');
+      await file.writeAsBytes(bytes, flush: true);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('PDF saved: ${_pdfFileName()}'),
+          backgroundColor: AppTheme.accent,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Download failed: $e'),
+          backgroundColor: AppTheme.error,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
   }
 
 
@@ -658,12 +713,22 @@ class _EmployeeReportScreenState extends State<EmployeeReportScreen> {
 
           const SizedBox(height: 20),
           ElevatedButton.icon(
-            onPressed: _onShareTap,
-            icon: const Icon(Icons.picture_as_pdf),
-            label: const Text('Share Report'),
+            onPressed: _onDownloadTap,
+            icon: const Icon(Icons.download),
+            label: const Text('Download PDF'),
             style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.accent,
                 foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 50)),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: _onShareTap,
+            icon: const Icon(Icons.share),
+            label: const Text('Share Report'),
+            style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.accent,
+                side: const BorderSide(color: AppTheme.accent),
                 minimumSize: const Size(double.infinity, 50)),
           ),
         ],

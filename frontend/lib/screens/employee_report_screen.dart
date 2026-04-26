@@ -1,9 +1,7 @@
-import 'dart:io';
-import 'dart:typed_data';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -488,20 +486,16 @@ class _EmployeeReportScreenState extends State<EmployeeReportScreen> {
     }
 
     try {
-      // getExternalStorageDirectory() → app-specific external dir
-      // (Android/data/com.xxx/files/) — always writable, no permission
-      // needed on any Android version. Visible in Files app.
-      final dir = Platform.isAndroid
-          ? (await getExternalStorageDirectory() ?? await getApplicationDocumentsDirectory())
-          : await getApplicationDocumentsDirectory();
-
-      final file = File('${dir.path}/${_pdfFileName()}');
-      await file.writeAsBytes(bytes, flush: true);
+      const channel = MethodChannel('com.example.garage_attendance/download');
+      await channel.invokeMethod('saveToDownloads', {
+        'bytes':    bytes,
+        'fileName': _pdfFileName(),
+      });
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('PDF saved: ${_pdfFileName()}'),
+          content: Text('PDF saved to Downloads: ${_pdfFileName()}'),
           backgroundColor: AppTheme.accent,
           duration: const Duration(seconds: 4),
         ),

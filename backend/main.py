@@ -51,6 +51,24 @@ async def lifespan(app: FastAPI):
                     ADD COLUMN IF NOT EXISTS checkout_window_start TIME,
                     ADD COLUMN IF NOT EXISTS checkout_window_end   TIME
             """))
+            # Back-fill NULL window columns with sensible defaults so the
+            # time-window enforcement is active for existing settings rows.
+            await _session.execute(_text("""
+                UPDATE settings SET
+                    checkin_window_start  = '08:45:00' WHERE checkin_window_start  IS NULL
+            """))
+            await _session.execute(_text("""
+                UPDATE settings SET
+                    checkin_window_end    = '10:00:00' WHERE checkin_window_end    IS NULL
+            """))
+            await _session.execute(_text("""
+                UPDATE settings SET
+                    checkout_window_start = '17:00:00' WHERE checkout_window_start IS NULL
+            """))
+            await _session.execute(_text("""
+                UPDATE settings SET
+                    checkout_window_end   = '19:00:00' WHERE checkout_window_end   IS NULL
+            """))
             await _session.commit()
         logger.info("✅ DB migration complete")
     except Exception as _e:

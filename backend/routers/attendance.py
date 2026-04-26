@@ -211,16 +211,39 @@ async def scan_face(
 
     if record is None:
         # ── First scan of the day → check_in
+        # ON CONFLICT DO NOTHING guards against a simultaneous duplicate scan
+        # (two requests passing the record=None check at the same time).
+        # The UNIQUE(employee_id, attendance_date) DB constraint ensures only
+        # one row is ever inserted; the second request simply does nothing.
         status = _determine_status(now, work_start, late_mins)
         await db.execute(
             text(
                 "INSERT INTO attendance (employee_id, company_id, attendance_date, check_in, status, match_score) "
-                "VALUES (:eid, :cid, :today, :now, :status, :score)"
+                "VALUES (:eid, :cid, :today, :now, :status, :score) "
+                "ON CONFLICT (employee_id, attendance_date) DO NOTHING"
             ),
             {"eid": emp_id, "cid": company_id, "today": today,
              "now": now, "status": status, "score": round(similarity, 4)},
         )
-        action = "check_in"
+        await db.commit()
+        # Re-fetch to confirm insert succeeded (may be 0 rows if conflict)
+        refetch = await db.execute(
+            text("SELECT id, check_in, check_out FROM attendance "
+                 "WHERE employee_id = :eid AND attendance_date = :today"),
+            {"eid": emp_id, "today": today},
+        )
+        record = refetch.fetchone()
+        if record and record[1] is not None:
+            action = "check_in"
+        else:
+            # Race: another request already checked in this employee
+            return ScanResponse(
+                success=True,
+                employee_name=emp_name,
+                time=time_str,
+                action="check_in",
+                match_score=round(similarity, 4),
+            )
     elif record[2] is None:
         # ── Second scan → check_out
         await db.execute(

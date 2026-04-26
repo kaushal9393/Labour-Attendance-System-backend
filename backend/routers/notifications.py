@@ -14,8 +14,10 @@ async def get_notifications(
     db:   AsyncSession = Depends(get_db),
     user: dict         = Depends(get_current_user),
 ):
+    from datetime import timezone
+    _IST = timezone(timedelta(hours=5, minutes=30))
     company_id = user["company_id"]
-    today      = date.today()
+    today      = datetime.now(tz=_IST).date()
 
     # ── Work start time + late threshold ──────────────────────────
     settings_row = await db.execute(

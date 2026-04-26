@@ -110,10 +110,12 @@ async def scan_face(
         f"similarity={similarity:.4f} threshold={COSINE_THRESHOLD}"
     )
 
-    # Use local server time — window times in the DB are stored in local time
-    now        = datetime.now()
-    today      = now.date()
-    time_str   = now.strftime("%H:%M:%S")
+    # Server runs UTC on Railway; window times in DB are IST (UTC+5:30)
+    from datetime import timezone
+    _IST = timezone(timedelta(hours=5, minutes=30))
+    now      = datetime.now(tz=_IST).replace(tzinfo=None)
+    today    = now.date()
+    time_str = now.strftime("%H:%M:%S")
 
     # 4. Get company settings for late threshold + windows
     settings_row = await db.execute(

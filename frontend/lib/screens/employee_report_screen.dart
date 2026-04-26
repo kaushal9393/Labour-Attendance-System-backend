@@ -437,7 +437,29 @@ class _EmployeeReportScreenState extends State<EmployeeReportScreen> {
 
   Future<void> _onShareTap() async {
     if (_salary == null) return;
-    final bytes = await _buildPdf();
+
+    // Show building indicator
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Building PDF…'),
+          duration: Duration(seconds: 2),
+          backgroundColor: AppTheme.accent,
+        ),
+      );
+    }
+
+    Uint8List bytes;
+    try {
+      bytes = await _buildPdf();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to build PDF: $e'), backgroundColor: AppTheme.error),
+      );
+      return;
+    }
+
     if (!mounted) return;
     showModalBottomSheet(
       context: context,
@@ -465,7 +487,7 @@ class _EmployeeReportScreenState extends State<EmployeeReportScreen> {
               _sheetButton(
                 icon: Icons.share,
                 title: 'Share PDF',
-                subtitle: 'Send via WhatsApp, Gmail, Drive',
+                subtitle: 'Send via WhatsApp, Gmail, Drive…',
                 onTap: () async {
                   Navigator.pop(ctx);
                   await Printing.sharePdf(
@@ -491,74 +513,80 @@ class _EmployeeReportScreenState extends State<EmployeeReportScreen> {
 
   Future<void> _savePdf(Uint8List bytes) async {
     try {
+      final String fileName = _pdfFileName();
+
       if (Platform.isAndroid) {
-        // Android 10+ — write directly to Downloads (no permission needed)
-        // Android 9 and below — request WRITE_EXTERNAL_STORAGE
-        bool canWrite = true;
-        final sdkInt = await _getAndroidSdkInt();
-        if (sdkInt < 29) {
+        // On Android 9 (SDK 28) and below request legacy storage permission.
+        // On Android 10+ scoped storage applies — no permission needed for
+        // getExternalStorageDirectory() (app-specific external dir).
+        final sdkInt = await _androidSdkVersion();
+        if (sdkInt <= 28) {
           final status = await Permission.storage.request();
-          canWrite = status.isGranted;
+          if (!status.isGranted) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                  content: Text('Storage permission denied. Please allow it in App Settings.'),
+                  backgroundColor: AppTheme.error),
+            );
+            return;
+          }
         }
-        if (!canWrite) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-                content: Text('Storage permission denied'),
-                backgroundColor: AppTheme.error),
-          );
-          return;
+
+        // Android 10+ can write to the public Downloads folder directly.
+        // Android 9 uses the app-specific external dir as a safe fallback.
+        Directory? saveDir;
+        if (sdkInt >= 29) {
+          saveDir = Directory('/storage/emulated/0/Download');
+          if (!await saveDir.exists()) {
+            saveDir = await getExternalStorageDirectory();
+          }
+        } else {
+          saveDir = await getExternalStorageDirectory();
         }
-        // Try Downloads folder first, fallback to app external dir
-        Directory? dir = Directory('/storage/emulated/0/Download');
-        if (!await dir.exists()) {
-          dir = await getExternalStorageDirectory();
-        }
-        dir ??= await getApplicationDocumentsDirectory();
-        final file = File('${dir.path}/${_pdfFileName()}');
-        await file.writeAsBytes(bytes);
+        saveDir ??= await getApplicationDocumentsDirectory();
+
+        final file = File('${saveDir.path}/$fileName');
+        await file.writeAsBytes(bytes, flush: true);
+
         if (!mounted) return;
+        final location = saveDir.path.contains('Download') ? 'Downloads' : 'Documents';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('PDF saved to ${dir.path.contains('Download') ? 'Downloads' : 'Documents'}'),
+            content: Text('PDF saved to $location/$fileName'),
             backgroundColor: AppTheme.accent,
+            duration: const Duration(seconds: 4),
           ),
         );
       } else {
-        // iOS — save to app documents and open share sheet
-        final dir = await getApplicationDocumentsDirectory();
-        final file = File('${dir.path}/${_pdfFileName()}');
-        await file.writeAsBytes(bytes);
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('PDF saved to Documents'),
-              backgroundColor: AppTheme.accent),
-        );
+        // iOS: write to documents then open system share sheet so the user
+        // can save to Files, AirDrop, etc.
+        final dir  = await getApplicationDocumentsDirectory();
+        final file = File('${dir.path}/$fileName');
+        await file.writeAsBytes(bytes, flush: true);
+        await Printing.sharePdf(bytes: bytes, filename: fileName);
       }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text('Failed to save PDF: $e'),
-            backgroundColor: AppTheme.error),
+            content: Text('Download failed: $e'),
+            backgroundColor: AppTheme.error,
+            duration: const Duration(seconds: 5)),
       );
     }
   }
 
-  Future<int> _getAndroidSdkInt() async {
+  /// Returns the Android SDK version by reading the system property file.
+  /// Falls back to 30 (Android 10) if unreadable — safe default.
+  Future<int> _androidSdkVersion() async {
     if (!Platform.isAndroid) return 99;
     try {
-      // DeviceInfoPlugin would be ideal but we avoid adding a dependency.
-      // Check if /proc/version or build.prop gives us SDK — fallback to 30.
-      final file = File('/system/build.prop');
-      if (await file.exists()) {
-        final content = await file.readAsString();
-        final match = RegExp(r'ro\.build\.version\.sdk=(\d+)').firstMatch(content);
-        if (match != null) return int.parse(match.group(1)!);
-      }
+      final result = await Process.run('getprop', ['ro.build.version.sdk']);
+      final parsed = int.tryParse(result.stdout.toString().trim());
+      if (parsed != null) return parsed;
     } catch (_) {}
-    return 30; // assume modern Android — no permission needed
+    return 30;
   }
 
   Widget _sheetButton(

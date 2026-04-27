@@ -39,19 +39,27 @@ async def monthly_salary(
     settings_fetched = settings_row.fetchone()
     days_per_week = settings_fetched[0] if settings_fetched else 6
 
-    # 3. Only count working days up to today (not the full month if current)
-    today = datetime.date.today()
-    if month == today.month and year == today.year:
-        count_till = today
-    else:
-        last_day = calendar.monthrange(year, month)[1]
-        count_till = datetime.date(year, month, last_day)
-
-    working_days = _count_working_days(
-        start=datetime.date(year, month, 1),
-        end=count_till,
-        days_per_week=days_per_week,
+    # 3. Check if admin has manually set working days for this month
+    manual_row = await db.execute(
+        text("SELECT working_days FROM monthly_working_days WHERE company_id = :cid AND month = :month AND year = :year"),
+        {"cid": company_id, "month": month, "year": year},
     )
+    manual = manual_row.fetchone()
+
+    today = datetime.date.today()
+    if manual:
+        working_days = manual[0]
+    else:
+        if month == today.month and year == today.year:
+            count_till = today
+        else:
+            last_day = calendar.monthrange(year, month)[1]
+            count_till = datetime.date(year, month, last_day)
+        working_days = _count_working_days(
+            start=datetime.date(year, month, 1),
+            end=count_till,
+            days_per_week=days_per_week,
+        )
 
     # 4. Count attendance
     att_row = await db.execute(
@@ -71,12 +79,15 @@ async def monthly_salary(
     late_days    = int(att[1]) if att else 0
     absent_days  = max(0, working_days - present_days - late_days)
 
-    # 5. Salary math
-    total_month_working_days = _count_working_days(
-        start=datetime.date(year, month, 1),
-        end=datetime.date(year, month, calendar.monthrange(year, month)[1]),
-        days_per_week=days_per_week,
-    )
+    # 5. Salary math — use manual total if set, else auto-calculate full month
+    if manual:
+        total_month_working_days = manual[0]
+    else:
+        total_month_working_days = _count_working_days(
+            start=datetime.date(year, month, 1),
+            end=datetime.date(year, month, calendar.monthrange(year, month)[1]),
+            days_per_week=days_per_week,
+        )
     per_day_salary   = float(monthly_salary) / total_month_working_days if total_month_working_days > 0 else 0
     net_pay          = (present_days + late_days) * per_day_salary
     deduction_amount = float(monthly_salary) - net_pay

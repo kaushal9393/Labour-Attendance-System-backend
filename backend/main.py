@@ -19,7 +19,7 @@ import asyncio
 from core.database import ping_db, AsyncSessionLocal
 from core.face_service import warmup_models
 from core import face_cache
-from routers import auth, employees, attendance, salary, reports, settings as settings_router, notifications as notifications_router
+from routers import auth, employees, attendance, salary, reports, settings as settings_router, notifications as notifications_router, working_days as working_days_router
 
 load_dotenv()
 
@@ -68,6 +68,16 @@ async def lifespan(app: FastAPI):
             await _session.execute(_text("""
                 UPDATE settings SET
                     checkout_window_end   = '19:00:00' WHERE checkout_window_end   IS NULL
+            """))
+            await _session.execute(_text("""
+                CREATE TABLE IF NOT EXISTS monthly_working_days (
+                    id         SERIAL PRIMARY KEY,
+                    company_id INTEGER NOT NULL,
+                    month      INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
+                    year       INTEGER NOT NULL,
+                    working_days INTEGER NOT NULL,
+                    UNIQUE (company_id, month, year)
+                )
             """))
             await _session.commit()
         logger.info("✅ DB migration complete")
@@ -150,3 +160,4 @@ app.include_router(salary.router)
 app.include_router(reports.router)
 app.include_router(settings_router.router)
 app.include_router(notifications_router.router)
+app.include_router(working_days_router.router)

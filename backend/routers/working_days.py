@@ -1,12 +1,18 @@
-import datetime
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
+from pydantic import BaseModel
 
 from core.database import get_db
 from core.security import get_current_user
 
 router = APIRouter(prefix="/api/working-days", tags=["Working Days"])
+
+
+class WorkingDaysPayload(BaseModel):
+    month: int
+    year: int
+    working_days: int
 
 
 @router.get("")
@@ -32,17 +38,15 @@ async def get_working_days(
 
 @router.put("")
 async def set_working_days(
-    payload: dict,
+    payload: WorkingDaysPayload,
     db:   AsyncSession = Depends(get_db),
     user: dict         = Depends(get_current_user),
 ):
     company_id   = user["company_id"]
-    month        = payload.get("month")
-    year         = payload.get("year")
-    working_days = payload.get("working_days")
+    month        = payload.month
+    year         = payload.year
+    working_days = payload.working_days
 
-    if not all([month, year, working_days is not None]):
-        raise HTTPException(status_code=422, detail="month, year, working_days required")
     if not (1 <= month <= 12):
         raise HTTPException(status_code=422, detail="month must be 1-12")
     if not (2020 <= year <= 2100):

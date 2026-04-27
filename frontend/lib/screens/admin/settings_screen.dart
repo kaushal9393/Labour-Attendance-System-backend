@@ -21,8 +21,15 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
   TimeOfDay _endTime   = const TimeOfDay(hour: 18, minute: 0);
   int       _lateThreshold = 15;
   int       _workDays      = 6;
-  bool      _loading = false;
   bool      _saving  = false;
+
+  // Monthly working days override
+  int  _selectedMonth     = DateTime.now().month;
+  int  _selectedYear      = DateTime.now().year;
+  int? _monthlyWorkingDays;
+  bool _loadingMonthly    = false;
+  bool _savingMonthly     = false;
+  final _monthlyDaysCtrl  = TextEditingController();
 
   TimeOfDay _ciStart = const TimeOfDay(hour: 8, minute: 45);
   TimeOfDay _ciEnd   = const TimeOfDay(hour: 10, minute: 0);
@@ -33,7 +40,72 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
   void initState() {
     super.initState();
     _loadSettings();
+    _loadMonthlyWorkingDays();
   }
+
+  @override
+  void dispose() {
+    _monthlyDaysCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadMonthlyWorkingDays() async {
+    if (!mounted) return;
+    setState(() => _loadingMonthly = true);
+    try {
+      final resp = await ApiService().getMonthlyWorkingDays(
+        month: _selectedMonth, year: _selectedYear,
+      );
+      final data = resp.data;
+      int? days;
+      if (data is Map<String, dynamic> && data['working_days'] != null) {
+        days = int.tryParse(data['working_days'].toString());
+      }
+      if (mounted) {
+        setState(() {
+          _monthlyWorkingDays = days;
+          _monthlyDaysCtrl.text = days != null ? days.toString() : '';
+          _loadingMonthly = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingMonthly = false);
+    }
+  }
+
+  Future<void> _saveMonthlyWorkingDays() async {
+    final days = int.tryParse(_monthlyDaysCtrl.text.trim());
+    if (days == null || days < 1 || days > 31) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Valid working days enter karo (1–31)'), backgroundColor: AppTheme.error),
+      );
+      return;
+    }
+    setState(() => _savingMonthly = true);
+    try {
+      await ApiService().setMonthlyWorkingDays(
+        month: _selectedMonth, year: _selectedYear, workingDays: days,
+      );
+      if (mounted) {
+        setState(() => _monthlyWorkingDays = days);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Working days saved'), backgroundColor: AppTheme.accent),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Save failed: $e'), backgroundColor: AppTheme.error),
+        );
+      }
+    }
+    if (mounted) setState(() => _savingMonthly = false);
+  }
+
+  static const _monthNames = [
+    '', 'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ];
 
   void _applySettings(Map<String, dynamic> d) {
     final start = (d['work_start_time'] as String).split(':');
@@ -49,22 +121,16 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
   }
 
   Future<void> _loadSettings() async {
-    // Show cached data instantly — no loading spinner on repeat visits
     final cached = await CacheService.get('settings');
-    if (cached != null) {
-      setState(() { _applySettings(cached as Map<String, dynamic>); _loading = false; });
-    } else {
-      setState(() => _loading = true);
+    if (cached != null && mounted) {
+      setState(() => _applySettings(cached as Map<String, dynamic>));
     }
-
     try {
       final resp = await ApiService().getSettings();
       final d = resp.data as Map<String, dynamic>;
       await CacheService.save('settings', d);
-      if (mounted) setState(() { _applySettings(d); _loading = false; });
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
-    }
+      if (mounted) setState(() => _applySettings(d));
+    } catch (_) {}
   }
 
   Future<void> _save() async {
@@ -184,10 +250,7 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
       appBar: AppBar(
           title: const Text('Settings'),
           backgroundColor: AppTheme.surface),
-      body: _loading
-          ? const Center(
-              child: CircularProgressIndicator(color: AppTheme.accent))
-          : SingleChildScrollView(
+      body: SingleChildScrollView(
               padding: const EdgeInsets.all(20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -314,6 +377,134 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
                         style: TextStyle(
                             color: AppTheme.textSecondary, fontSize: 12)),
                   ]),
+                  const SizedBox(height: 24),
+
+                  // Monthly working days override
+                  const _SectionTitle(title: 'Monthly Working Days'),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Set exact working days for a specific month (overrides auto-calculation)',
+                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                  ),
+                  const SizedBox(height: 12),
+                  // Month + Year row
+                  Row(children: [
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppTheme.cardBg,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppTheme.divider),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<int>(
+                            value: _selectedMonth,
+                            isExpanded: true,
+                            dropdownColor: AppTheme.cardBg,
+                            style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14),
+                            items: List.generate(12, (i) => i + 1).map((m) =>
+                              DropdownMenuItem(value: m, child: Text(_monthNames[m]))
+                            ).toList(),
+                            onChanged: (m) {
+                              if (m == null) return;
+                              setState(() { _selectedMonth = m; _monthlyDaysCtrl.clear(); _monthlyWorkingDays = null; });
+                              _loadMonthlyWorkingDays();
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppTheme.cardBg,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppTheme.divider),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<int>(
+                            value: _selectedYear,
+                            isExpanded: true,
+                            dropdownColor: AppTheme.cardBg,
+                            style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14),
+                            items: List.generate(5, (i) => DateTime.now().year - 1 + i).map((y) =>
+                              DropdownMenuItem(value: y, child: Text(y.toString()))
+                            ).toList(),
+                            onChanged: (y) {
+                              if (y == null) return;
+                              setState(() { _selectedYear = y; _monthlyDaysCtrl.clear(); _monthlyWorkingDays = null; });
+                              _loadMonthlyWorkingDays();
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                  ]),
+                  const SizedBox(height: 12),
+                  if (_loadingMonthly)
+                    const Center(child: CircularProgressIndicator(color: AppTheme.accent))
+                  else
+                    Row(children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _monthlyDaysCtrl,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            labelText: 'Working Days (${_monthNames[_selectedMonth]} $_selectedYear)',
+                            labelStyle: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                            hintText: _monthlyWorkingDays != null
+                                ? 'Current: $_monthlyWorkingDays days'
+                                : 'Auto (not set)',
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: const BorderSide(color: AppTheme.accent),
+                            ),
+                            filled: true,
+                            fillColor: AppTheme.cardBg,
+                          ),
+                          style: const TextStyle(color: AppTheme.textPrimary),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      SizedBox(
+                        width: 52,
+                        height: 52,
+                        child: ElevatedButton(
+                          onPressed: _savingMonthly ? null : _saveMonthlyWorkingDays,
+                          style: ElevatedButton.styleFrom(
+                            padding: EdgeInsets.zero,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          child: _savingMonthly
+                              ? const SizedBox(width: 18, height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                              : const Icon(Icons.check),
+                        ),
+                      ),
+                    ]),
+                  if (_monthlyWorkingDays != null) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: AppTheme.accent.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppTheme.accent.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(children: [
+                        const Icon(Icons.check_circle_outline, color: AppTheme.accent, size: 16),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${_monthNames[_selectedMonth]} $_selectedYear: $_monthlyWorkingDays working days set',
+                          style: const TextStyle(color: AppTheme.accent, fontSize: 13),
+                        ),
+                      ]),
+                    ),
+                  ],
                   const SizedBox(height: 24),
 
                   // Working days

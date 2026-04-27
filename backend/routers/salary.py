@@ -62,11 +62,14 @@ async def monthly_salary(
         )
 
     # 4. Count attendance
+    # present_days = only 'present' status (not late)
+    # late_days    = only 'late' status
+    # attended_days = present_days + late_days (total days employee came)
     att_row = await db.execute(
         text(
             "SELECT "
-            "  COUNT(*) FILTER (WHERE status IN ('present','late')) AS present_days, "
-            "  COUNT(*) FILTER (WHERE status = 'late')              AS late_days "
+            "  COUNT(*) FILTER (WHERE status = 'present') AS present_days, "
+            "  COUNT(*) FILTER (WHERE status = 'late')    AS late_days "
             "FROM attendance "
             "WHERE employee_id = :eid "
             "  AND EXTRACT(MONTH FROM attendance_date) = :month "
@@ -75,9 +78,10 @@ async def monthly_salary(
         {"eid": employee_id, "month": month, "year": year},
     )
     att = att_row.fetchone()
-    present_days = int(att[0]) if att else 0
-    late_days    = int(att[1]) if att else 0
-    absent_days  = max(0, working_days - present_days - late_days)
+    present_days   = int(att[0]) if att else 0
+    late_days      = int(att[1]) if att else 0
+    attended_days  = present_days + late_days
+    absent_days    = max(0, working_days - attended_days)
 
     # 5. Salary math — use manual total if set, else auto-calculate full month
     if manual:
@@ -89,7 +93,7 @@ async def monthly_salary(
             days_per_week=days_per_week,
         )
     per_day_salary   = float(monthly_salary) / total_month_working_days if total_month_working_days > 0 else 0
-    net_pay          = (present_days + late_days) * per_day_salary
+    net_pay          = attended_days * per_day_salary
     deduction_amount = float(monthly_salary) - net_pay
 
     # 6. Upsert salary record

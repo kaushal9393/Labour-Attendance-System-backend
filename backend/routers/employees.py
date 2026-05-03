@@ -168,15 +168,22 @@ async def delete_employee(
     user:        dict         = Depends(get_current_user),
 ):
     company_id = user["company_id"]
-    await db.execute(
-        text("UPDATE employees SET status = 'deleted' WHERE id = :eid AND company_id = :cid"),
+
+    # Verify employee belongs to this company
+    row = await db.execute(
+        text("SELECT id FROM employees WHERE id = :eid AND company_id = :cid"),
         {"eid": employee_id, "cid": company_id},
     )
-    # Permanently delete face vectors so this employee can never be scanned again
-    await db.execute(
-        text("DELETE FROM face_vectors WHERE employee_id = :eid"),
-        {"eid": employee_id},
-    )
+    if not row.fetchone():
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    # Delete all related data permanently
+    await db.execute(text("DELETE FROM salary_records WHERE employee_id = :eid"), {"eid": employee_id})
+    await db.execute(text("DELETE FROM attendance    WHERE employee_id = :eid"), {"eid": employee_id})
+    await db.execute(text("DELETE FROM face_vectors  WHERE employee_id = :eid"), {"eid": employee_id})
+    await db.execute(text("DELETE FROM employees     WHERE id = :eid AND company_id = :cid"),
+                     {"eid": employee_id, "cid": company_id})
+
     await db.commit()
     cache.invalidate(f"employees_list_{company_id}")
     face_cache.remove_employee(company_id=company_id, emp_id=employee_id)

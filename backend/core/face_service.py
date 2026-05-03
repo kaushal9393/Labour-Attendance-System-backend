@@ -145,17 +145,13 @@ def _detect_and_crop_face(img: np.ndarray) -> Optional[np.ndarray]:
 
 
 def extract_embedding(img: np.ndarray) -> Optional[List[float]]:
-    """Detect face then embed. Falls back to center crop if no face found."""
+    """Detect face then embed. Returns None if no face detected — no fallback."""
     if img is None or img.ndim != 3:
         return None
     crop = _detect_and_crop_face(img)
     if crop is None:
-        # Fallback: use center square crop
-        h, w = img.shape[:2]
-        size = min(h, w)
-        x1 = (w - size) // 2
-        y1 = (h - size) // 2
-        crop = img[y1:y1+size, x1:x1+size]
+        # No face found — do NOT fallback to center crop (causes false matches)
+        return None
     return _arcface_embed(crop)
 
 
@@ -218,12 +214,13 @@ def process_registration_photos(photos: List[str]) -> dict:
         img = decode_base64_image(p)
         if img is None:
             return None
-        # ML Kit already cropped to face — use no-detect path if small (224x224)
-        h, w = img.shape[:2]
-        if max(h, w) <= 256:
-            return extract_embedding_no_detect(img)
-        img = _resize_for_embedding(img, 480)
-        return extract_embedding(img)
+        img = _resize_for_embedding(img, 640)
+        # Always use detection path — same as scan, so embeddings are consistent
+        result = extract_embedding(img)
+        if result is None:
+            # If Haar misses (tight crop), fall back to no-detect only for registration
+            result = extract_embedding_no_detect(img)
+        return result
 
     result = {}
     with ThreadPoolExecutor(max_workers=3) as executor:

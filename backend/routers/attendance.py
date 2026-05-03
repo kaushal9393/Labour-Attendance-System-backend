@@ -48,23 +48,22 @@ async def scan_face(
         cache.set(cache_key, company_id, ttl_seconds=3600)
 
     import cv2
-    from core.face_service import decode_base64_image, extract_embedding_no_detect
+    from core.face_service import decode_base64_image, extract_embedding
 
     img = decode_base64_image(payload.image)
     if img is None:
         return ScanResponse(success=False, reason="image_decode_failed")
 
-    # Resize to 320px — ArcFace only needs 112x112 internally, 320 is plenty
+    # Resize to max 640px — large enough for Haar to detect face, not too slow
     h, w = img.shape[:2]
-    if max(h, w) > 320:
-        scale = 320 / max(h, w)
+    if max(h, w) > 640:
+        scale = 640 / max(h, w)
         img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
 
-    # Run face detection first — ensures we embed only the actual face region
-    from core.face_service import extract_embedding
+    # Detect face first — if no face found, reject immediately (no fallback)
     embedding = extract_embedding(img)
     if embedding is None:
-        return ScanResponse(success=False, reason="face_embedding_failed")
+        return ScanResponse(success=False, reason="face_not_detected")
 
     # 3. Match against in-memory face cache (zero DB call)
     result = face_cache.find_best_match(company_id, embedding, COSINE_THRESHOLD)

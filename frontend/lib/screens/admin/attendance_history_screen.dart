@@ -368,8 +368,7 @@ class _AttendanceEditSheetState extends State<_AttendanceEditSheet> {
   late String _status;
   TimeOfDay?  _checkIn;
   TimeOfDay?  _checkOut;
-  bool _saving  = false;
-  bool _deleting = false;
+  bool _saving = false;
 
   String _fmt24(String? dt) {
     if (dt == null) return '';
@@ -452,46 +451,19 @@ class _AttendanceEditSheetState extends State<_AttendanceEditSheet> {
     if (mounted) setState(() => _saving = false);
   }
 
-  Future<void> _delete() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Record delete karo?'),
-        content: Text('${widget.employeeName} ki ${widget.dateStr} ki attendance delete hogi.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel')),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete', style: TextStyle(color: AppTheme.error)),
-          ),
-        ],
-      ),
+  void _delete() {
+    // Close sheet immediately — optimistic delete
+    Navigator.pop(context);
+    widget.onSaved();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Record deleted'), backgroundColor: AppTheme.error),
     );
-    if (confirm != true) return;
-
-    setState(() => _deleting = true);
-    try {
-      await ApiService().manualEditAttendance({
-        'employee_id':     widget.employeeId,
-        'attendance_date': widget.dateStr,
-        'action':          'delete',
-      });
-      if (mounted) {
-        Navigator.pop(context);
-        widget.onSaved();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Record deleted'), backgroundColor: AppTheme.error),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.error),
-        );
-      }
-    }
-    if (mounted) setState(() => _deleting = false);
+    // API call in background — ignore errors (optimistic)
+    ApiService().manualEditAttendance({
+      'employee_id':     widget.employeeId,
+      'attendance_date': widget.dateStr,
+      'action':          'delete',
+    }).ignore();
   }
 
   @override
@@ -525,11 +497,8 @@ class _AttendanceEditSheetState extends State<_AttendanceEditSheet> {
           ]),
           if (isExisting)
             IconButton(
-              onPressed: _deleting ? null : _delete,
-              icon: _deleting
-                  ? const SizedBox(width: 18, height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.error))
-                  : const Icon(Icons.delete_outline, color: AppTheme.error),
+              onPressed: _delete,
+              icon: const Icon(Icons.delete_outline, color: AppTheme.error),
             ),
         ]),
         const SizedBox(height: 20),

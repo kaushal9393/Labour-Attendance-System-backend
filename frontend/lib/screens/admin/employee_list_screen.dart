@@ -105,50 +105,23 @@ class _EmployeeCard extends ConsumerStatefulWidget {
 class _EmployeeCardState extends ConsumerState<_EmployeeCard> {
 
   void _onDeleteTap() {
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted) return;
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (_) => AlertDialog(
-          backgroundColor: AppTheme.cardBg,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          title: const Text('Delete Employee',
-              style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w700)),
-          content: Text(
-            'Are you sure you want to delete "${widget.employee.name}"?\nThis cannot be undone.',
-            style: const TextStyle(color: AppTheme.textSecondary, height: 1.5),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context, rootNavigator: true).pop(false),
-              child: const Text('Cancel',
-                  style: TextStyle(color: AppTheme.textSecondary)),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(context, rootNavigator: true).pop(true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.error,
-                minimumSize: const Size(80, 40),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              child: const Text('Delete'),
-            ),
-          ],
-        ),
-      );
-      if (confirmed != true || !mounted) return;
-      final messenger = ScaffoldMessenger.of(context);
-      final name = widget.employee.name;
-      await ref.read(employeesProvider.notifier).deleteOptimistic(widget.employee.id);
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text('$name deleted'),
-          backgroundColor: AppTheme.error,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ),
-      );
-    });
+    final name      = widget.employee.name;
+    final empId     = widget.employee.id;
+    final messenger = ScaffoldMessenger.of(context);
+    final notifier  = ref.read(employeesProvider.notifier);
+
+    // Delete immediately — show SnackBar with Undo option
+    notifier.deleteOptimistic(empId);
+    messenger.clearSnackBars();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('$name deleted'),
+        backgroundColor: AppTheme.error,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 4),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
   }
 
   @override

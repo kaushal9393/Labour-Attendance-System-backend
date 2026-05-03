@@ -130,6 +130,9 @@ class ApiService {
         if (checkoutTime != null) 'checkout_time': checkoutTime.toIso8601String(),
       });
 
+  Future<Response> manualEditAttendance(Map<String, dynamic> body) =>
+      _dio.put('/attendance/manual-edit', data: body);
+
   Future<Response> getMonthlyAttendance({
     required int employeeId,
     required int month,
@@ -165,6 +168,13 @@ class ApiService {
 
   Future<Response> updateSettings(Map<String, dynamic> body) =>
       _dio.put('/settings', data: body);
+
+  // ── Monthly Working Days ──────────────────────────────────────
+  Future<Response> getMonthlyWorkingDays({required int month, required int year}) =>
+      _dio.get('/working-days', queryParameters: {'month': month, 'year': year});
+
+  Future<Response> setMonthlyWorkingDays({required int month, required int year, required int workingDays}) =>
+      _dio.put('/working-days', data: {'month': month, 'year': year, 'working_days': workingDays});
 
   // ── Notifications ─────────────────────────────────────────────
   Future<Response> getNotifications() => _dio.get('/notifications');

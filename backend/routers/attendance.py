@@ -424,6 +424,99 @@ async def manual_checkout(
     )
 
 
+# ─── PUT /api/attendance/manual-edit ─────────────────────────
+# Admin: add, edit or delete an attendance record for any employee+date
+@router.put("/manual-edit")
+async def manual_edit_attendance(
+    payload: dict,
+    db:   AsyncSession = Depends(get_db),
+    user: dict         = Depends(get_current_user),
+):
+    company_id   = user["company_id"]
+    employee_id  = payload.get("employee_id")
+    date_str     = payload.get("attendance_date")   # "YYYY-MM-DD"
+    action       = payload.get("action")            # "upsert" | "delete"
+    status       = payload.get("status")            # "present"|"late"|"absent"
+    check_in_str = payload.get("check_in")          # "HH:MM" or null
+    check_out_str= payload.get("check_out")         # "HH:MM" or null
+
+    if not all([employee_id, date_str, action]):
+        raise HTTPException(status_code=422, detail="employee_id, attendance_date, action required")
+
+    # Verify employee belongs to this company
+    emp_row = await db.execute(
+        text("SELECT name FROM employees WHERE id = :eid AND company_id = :cid AND status != 'deleted'"),
+        {"eid": employee_id, "cid": company_id},
+    )
+    emp = emp_row.fetchone()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    try:
+        att_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid date format, use YYYY-MM-DD")
+
+    from datetime import timezone
+    _IST = timezone(timedelta(hours=5, minutes=30))
+
+    def _parse_time(time_str: str | None, base_date) -> datetime | None:
+        if not time_str:
+            return None
+        try:
+            h, m = map(int, time_str.split(":"))
+            return datetime(base_date.year, base_date.month, base_date.day, h, m, 0)
+        except Exception:
+            return None
+
+    if action == "delete":
+        await db.execute(
+            text("DELETE FROM attendance WHERE employee_id = :eid AND attendance_date = :dt AND company_id = :cid"),
+            {"eid": employee_id, "dt": att_date, "cid": company_id},
+        )
+        await db.commit()
+        cache.invalidate(f"today_attendance_{company_id}_{att_date}")
+        return {"success": True, "message": "Attendance record deleted"}
+
+    if action == "upsert":
+        if status not in ("present", "late", "absent"):
+            raise HTTPException(status_code=422, detail="status must be present/late/absent")
+
+        check_in_dt  = _parse_time(check_in_str,  att_date)
+        check_out_dt = _parse_time(check_out_str, att_date)
+
+        # Check if record already exists
+        existing = await db.execute(
+            text("SELECT id FROM attendance WHERE employee_id = :eid AND attendance_date = :dt"),
+            {"eid": employee_id, "dt": att_date},
+        )
+        record = existing.fetchone()
+
+        if record:
+            await db.execute(
+                text(
+                    "UPDATE attendance SET status=:status, check_in=:ci, check_out=:co "
+                    "WHERE id=:rid"
+                ),
+                {"status": status, "ci": check_in_dt, "co": check_out_dt, "rid": record[0]},
+            )
+        else:
+            await db.execute(
+                text(
+                    "INSERT INTO attendance (employee_id, company_id, attendance_date, check_in, check_out, status, match_score) "
+                    "VALUES (:eid, :cid, :dt, :ci, :co, :status, NULL)"
+                ),
+                {"eid": employee_id, "cid": company_id, "dt": att_date,
+                 "ci": check_in_dt, "co": check_out_dt, "status": status},
+            )
+
+        await db.commit()
+        cache.invalidate(f"today_attendance_{company_id}_{att_date}")
+        return {"success": True, "message": "Attendance updated"}
+
+    raise HTTPException(status_code=422, detail="action must be 'upsert' or 'delete'")
+
+
 # ─── Helpers ──────────────────────────────────────────────────
 def _to_time(v) -> Optional[dt_time]:
     """Normalise a DB TIME value to datetime.time.

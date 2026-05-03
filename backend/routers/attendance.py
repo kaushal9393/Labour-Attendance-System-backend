@@ -21,9 +21,9 @@ from models.schemas import (
 logger = logging.getLogger("garage_api.attendance")
 router = APIRouter(prefix="/api/attendance", tags=["Attendance"])
 
-# InsightFace ArcFace standard: same-person cosine similarity ~0.4–0.7,
-# different-person ~0.0–0.3. 0.45 is the industry-recommended cutoff.
-COSINE_THRESHOLD = 0.45
+# ArcFace cosine similarity: same-person ~0.6–1.0, different-person ~0.0–0.4
+# 0.60 gives low false-positive rate while still matching across lighting/angle
+COSINE_THRESHOLD = 0.60
 
 
 # ─── POST /api/attendance/scan ────────────────────────────────
@@ -60,9 +60,9 @@ async def scan_face(
         scale = 320 / max(h, w)
         img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
 
-    # Skip face detection on scan — camera already frames the face.
-    # extract_embedding_no_detect runs only ArcFace (~80ms vs ~400ms with detector)
-    embedding = extract_embedding_no_detect(img)
+    # Run face detection first — ensures we embed only the actual face region
+    from core.face_service import extract_embedding
+    embedding = extract_embedding(img)
     if embedding is None:
         return ScanResponse(success=False, reason="face_embedding_failed")
 

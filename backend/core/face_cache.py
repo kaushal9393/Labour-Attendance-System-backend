@@ -58,7 +58,7 @@ def remove_employee(company_id: int, emp_id: int) -> None:
             _cache[company_id].pop(emp_id, None)
 
 
-def find_best_match(company_id: int, query_embedding: list, threshold: float = 0.45):
+def find_best_match(company_id: int, query_embedding: list, threshold: float = 0.60):
     """
     Compare query embedding against all cached vectors for a company.
     Returns (employee_id, name, similarity) or None if no match.

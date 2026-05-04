@@ -175,38 +175,8 @@ async def scan_face(
                     window_end=str(ci_end),
                 )
     else:
-        # Determining a check-out attempt
-        logger.info(
-            f"[Scan] Checkout window check for {emp_name}: "
-            f"co_start={co_start!r}(type={type(co_start).__name__}) "
-            f"co_end={co_end!r}(type={type(co_end).__name__}) "
-            f"now_time={now_time!r}(type={type(now_time).__name__})"
-        )
-        if co_start is not None and co_end is not None:
-            try:
-                in_window = co_start <= now_time <= co_end
-            except TypeError as e:
-                logger.error(f"[Scan] Window comparison TypeError: {e} — allowing scan")
-                in_window = True
-            if not in_window:
-                logger.info(
-                    f"[Scan] Check-out rejected for {emp_name}: "
-                    f"now={now_time} outside window {co_start}–{co_end}"
-                )
-                return ScanResponse(
-                    success=False,
-                    match=True,
-                    action="check_out",
-                    employee_name=emp_name,
-                    reason="outside_checkout_window",
-                    message=(
-                        f"Check-out is only allowed between "
-                        f"{co_start.strftime('%I:%M %p')} and {co_end.strftime('%I:%M %p')}. "
-                        f"Current time {now_time.strftime('%I:%M %p')} is outside this window."
-                    ),
-                    window_start=str(co_start),
-                    window_end=str(co_end),
-                )
+        # Check-out — no window restriction, always allow at current time
+        logger.info(f"[Scan] Checkout for {emp_name} at {now_time} — no window restriction")
 
     if record is None:
         # ── First scan of the day → check_in

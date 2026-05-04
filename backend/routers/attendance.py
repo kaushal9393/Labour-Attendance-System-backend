@@ -144,39 +144,13 @@ async def scan_face(
     )
     record = existing.fetchone()
 
-    # Time window enforcement — fail-closed: if a window is configured (even
-    # partially), reject scans outside it rather than silently allowing them.
     now_time = now.time().replace(microsecond=0)
+    # No window rejection — check-in and check-out always allowed at current time.
+    # Late status is determined by work_start + late_threshold, not by window.
     if record is None:
-        # Determining a check-in attempt
-        if ci_start is not None and ci_end is not None:
-            try:
-                in_window = ci_start <= now_time <= ci_end
-            except TypeError as e:
-                logger.error(f"[Scan] Check-in window comparison TypeError: {e} — allowing scan")
-                in_window = True
-            if not in_window:
-                logger.info(
-                    f"[Scan] Check-in rejected for {emp_name}: "
-                    f"now={now_time} outside window {ci_start}–{ci_end}"
-                )
-                return ScanResponse(
-                    success=False,
-                    match=True,
-                    action="check_in",
-                    employee_name=emp_name,
-                    reason="outside_checkin_window",
-                    message=(
-                        f"Check-in is only allowed between "
-                        f"{ci_start.strftime('%I:%M %p')} and {ci_end.strftime('%I:%M %p')}. "
-                        f"Current time {now_time.strftime('%I:%M %p')} is outside this window."
-                    ),
-                    window_start=str(ci_start),
-                    window_end=str(ci_end),
-                )
+        logger.info(f"[Scan] Check-in for {emp_name} at {now_time}")
     else:
-        # Check-out — no window restriction, always allow at current time
-        logger.info(f"[Scan] Checkout for {emp_name} at {now_time} — no window restriction")
+        logger.info(f"[Scan] Checkout for {emp_name} at {now_time}")
 
     if record is None:
         # ── First scan of the day → check_in

@@ -92,13 +92,6 @@ class _FaceScanScreenState extends State<FaceScanScreen>
           'time':          data['time'],
           'action':        data['action'],
         });
-      } else if (data['reason'] == 'outside_checkin_window') {
-        context.go('/kiosk/outside-window', extra: {
-          'employee_name': data['employee_name'],
-          'action':        data['action'],
-          'window_start':  data['window_start'],
-          'window_end':    data['window_end'],
-        });
       } else {
         context.go('/kiosk/failed');
       }

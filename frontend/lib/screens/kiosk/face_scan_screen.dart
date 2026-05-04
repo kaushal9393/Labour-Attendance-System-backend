@@ -212,34 +212,26 @@ class _FaceScanScreenState extends State<FaceScanScreen>
   }
 
   void _showAdminDialog() {
-    final controller = TextEditingController();
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: AppTheme.cardBg,
-        title: const Text('Admin Access', style: TextStyle(color: AppTheme.textPrimary)),
-        content: TextField(
-          controller: controller,
-          obscureText: true,
-          decoration: const InputDecoration(labelText: 'Admin PIN', hintText: 'Enter PIN'),
-        ),
+        title: const Text('Settings', style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w700)),
+        content: const Text('App mode switch karna chahte hain?',
+            style: TextStyle(color: AppTheme.textSecondary, fontSize: 14)),
         actions: [
           TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
+          ),
+          ElevatedButton(
             onPressed: () async {
               Navigator.pop(context);
               final prefs = await SharedPreferences.getInstance();
               await prefs.remove(AppConstants.keyMode);
               if (mounted) context.go('/mode-select');
             },
-            child: const Text('Switch Mode', style: TextStyle(color: Color(0xFF1565C0))),
-          ),
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              if (controller.text == '1234') context.go('/kiosk/admin');
-            },
-            child: const Text('Enter'),
+            child: const Text('Switch Mode'),
           ),
         ],
       ),

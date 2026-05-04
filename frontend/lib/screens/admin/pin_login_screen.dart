@@ -63,7 +63,11 @@ class _PinLoginScreenState extends ConsumerState<PinLoginScreen> {
   }
 
   Future<void> _goFullLogin() async {
-    context.go('/admin/login');
+    // Clear only the PIN so login screen doesn't redirect back here.
+    // Credentials stay so fields are pre-filled; PIN setup dialog shows again after login.
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kPin);
+    if (mounted) context.go('/admin/login');
   }
 
   @override

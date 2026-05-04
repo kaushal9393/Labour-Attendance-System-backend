@@ -108,15 +108,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _showPinSetupDialog(SharedPreferences prefs) async {
-    final existingPin = prefs.getString(_kPin);
-
-    // If PIN already set, just go to dashboard
-    if (existingPin != null) {
-      if (mounted) context.go('/admin/dashboard');
-      return;
-    }
-
-    // Show PIN setup dialog
     if (!mounted) return;
     showDialog(
       context: context,

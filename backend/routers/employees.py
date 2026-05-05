@@ -2,11 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from typing import List
+import json
 
 from core.database import get_db
 from core.security import get_current_user
 from core.cache import cache
-from core.azure_face_service import register_employee_faces, delete_person
+from core.azure_face_service import register_employee_faces, delete_faces_from_list, update_face_userdata
 from utils.cloudinary_helper import upload_base64_photo
 from models.schemas import EmployeeCreate, EmployeeUpdate, EmployeeResponse, MessageResponse
 
@@ -54,11 +55,11 @@ async def register_employee(
 ):
     company_id = user["company_id"]
 
-    # 1. Register all photos with Azure Face API → get azure_person_id
+    # 1. Add photos to Azure FaceList — use "pending" as temp userData
     try:
-        azure_person_id = register_employee_faces(
+        persisted_face_ids = register_employee_faces(
             company_id=company_id,
-            employee_name=payload.name,
+            employee_id_placeholder="pending",
             photos=payload.photos,
         )
     except ValueError as exc:
@@ -66,27 +67,36 @@ async def register_employee(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Azure Face registration failed: {exc}")
 
-    # 2. Upload profile photo to Cloudinary (use first photo)
+    # 2. Upload profile photo to Cloudinary
     profile_url = upload_base64_photo(payload.photos[0])
 
-    # 3. Insert employee with azure_person_id
-    await db.execute(
+    # 3. Insert employee — store persisted_face_ids as JSON
+    result = await db.execute(
         text(
             "INSERT INTO employees (company_id, name, phone, monthly_salary, joining_date, "
             "profile_photo_url, azure_person_id) "
-            "VALUES (:cid, :name, :phone, :salary, :jdate, :photo_url, :azure_id) RETURNING id"
+            "VALUES (:cid, :name, :phone, :salary, :jdate, :photo_url, :face_ids) RETURNING id"
         ),
         {
-            "cid":       company_id,
-            "name":      payload.name,
-            "phone":     payload.phone,
-            "salary":    float(payload.monthly_salary),
-            "jdate":     payload.joining_date,
+            "cid":      company_id,
+            "name":     payload.name,
+            "phone":    payload.phone,
+            "salary":   float(payload.monthly_salary),
+            "jdate":    payload.joining_date,
             "photo_url": profile_url,
-            "azure_id":  azure_person_id,
+            "face_ids": json.dumps(persisted_face_ids),
         },
     )
+    employee_id = result.scalar_one()
     await db.commit()
+
+    # 4. Update userData on each face with real employee_id
+    for fid in persisted_face_ids:
+        try:
+            update_face_userdata(company_id, fid, employee_id)
+        except Exception:
+            pass
+
     cache.invalidate(f"employees_list_{company_id}")
     return MessageResponse(message=f"Employee '{payload.name}' registered successfully")
 
@@ -131,7 +141,6 @@ async def delete_employee(
 ):
     company_id = user["company_id"]
 
-    # Get employee + azure_person_id
     row = await db.execute(
         text("SELECT id, azure_person_id FROM employees WHERE id = :eid AND company_id = :cid"),
         {"eid": employee_id, "cid": company_id},
@@ -140,12 +149,12 @@ async def delete_employee(
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
 
-    azure_person_id = emp[1]
-
-    # Delete from Azure Face API (don't block if fails)
-    if azure_person_id:
+    # Delete faces from Azure FaceList
+    face_ids_json = emp[1]
+    if face_ids_json:
         try:
-            delete_person(company_id=company_id, person_id=azure_person_id)
+            face_ids = json.loads(face_ids_json)
+            delete_faces_from_list(company_id, face_ids)
         except Exception:
             pass
 

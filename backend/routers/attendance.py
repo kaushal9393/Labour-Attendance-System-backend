@@ -9,7 +9,7 @@ from sqlalchemy import text
 from core.database import get_db
 from core.security import get_current_user
 from core.cache import cache
-from core.azure_face_service import detect_face, identify_face
+from core.azure_face_service import detect_face, find_similar
 from models.schemas import (
     ScanRequest, ScanResponse,
     TodayAttendanceResponse, AttendanceRecord,
@@ -42,33 +42,42 @@ async def scan_face(
         company_id = company[0]
         cache.set(cache_key, company_id, ttl_seconds=3600)
 
-    # 3. Detect face via Azure — get faceId
+    # 3. Detect face via Azure — get temporary faceId
     face_id = detect_face(payload.image)
     if face_id is None:
         return ScanResponse(success=False, reason="face_not_detected")
 
-    # 4. Identify face against company PersonGroup
-    match = identify_face(company_id, face_id)
+    # 4. FindSimilar against company FaceList
+    import json as _json
+    match = find_similar(company_id, face_id)
     if match is None:
         logger.info(f"[Scan] No match for company_id={company_id}")
         return ScanResponse(success=False, reason="face_not_recognized")
 
-    azure_person_id, similarity = match
+    persisted_face_id, similarity = match
 
-    # 5. Lookup employee by azure_person_id
-    emp_row = await db.execute(
+    # 5. Lookup employee by persisted_face_id stored in azure_person_id JSON
+    emp_rows = await db.execute(
         text(
-            "SELECT id, name, status FROM employees "
-            "WHERE azure_person_id = :pid AND company_id = :cid"
+            "SELECT id, name, status, azure_person_id FROM employees "
+            "WHERE company_id = :cid AND status != 'deleted'"
         ),
-        {"pid": azure_person_id, "cid": company_id},
+        {"cid": company_id},
     )
-    emp = emp_row.fetchone()
-    if not emp or emp[2] == "deleted":
-        logger.info(f"[Scan] Employee not found or deleted for person_id={azure_person_id}")
+    emp_id, emp_name = None, None
+    for row in emp_rows.fetchall():
+        try:
+            face_ids = _json.loads(row[3]) if row[3] else []
+            if persisted_face_id in face_ids:
+                emp_id, emp_name = row[0], row[1]
+                break
+        except Exception:
+            continue
+
+    if emp_id is None:
+        logger.info(f"[Scan] No employee found for persistedFaceId={persisted_face_id}")
         return ScanResponse(success=False, reason="face_not_recognized")
 
-    emp_id, emp_name = emp[0], emp[1]
     logger.info(f"[Scan] Match: {emp_name} (id={emp_id}) confidence={similarity:.4f}")
 
     # Server runs UTC on Railway; window times in DB are IST (UTC+5:30)

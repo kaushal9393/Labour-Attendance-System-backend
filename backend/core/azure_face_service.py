@@ -104,8 +104,8 @@ def add_face_to_list(company_id: int, image_b64: str, user_data: str) -> Optiona
     if r.status_code == 200:
         return r.json().get("persistedFaceId")
     else:
-        logger.warning(f"[Azure] AddFace failed ({r.status_code}): {r.text}")
-        return None
+        logger.error(f"[Azure] AddFace failed ({r.status_code}): {r.text}")
+        raise RuntimeError(f"AddFace failed ({r.status_code}): {r.text}")
 
 
 def find_similar(company_id: int, face_id: str) -> Optional[tuple]:

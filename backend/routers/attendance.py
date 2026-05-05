@@ -145,8 +145,6 @@ async def scan_face(
     record = existing.fetchone()
 
     now_time = now.time().replace(microsecond=0)
-    # No window rejection — check-in and check-out always allowed at current time.
-    # Late status is determined by work_start + late_threshold, not by window.
     if record is None:
         logger.info(f"[Scan] Check-in for {emp_name} at {now_time}")
     else:
@@ -154,11 +152,14 @@ async def scan_face(
 
     if record is None:
         # ── First scan of the day → check_in
-        # ON CONFLICT DO NOTHING guards against a simultaneous duplicate scan
-        # (two requests passing the record=None check at the same time).
-        # The UNIQUE(employee_id, attendance_date) DB constraint ensures only
-        # one row is ever inserted; the second request simply does nothing.
-        status = _determine_status(now, work_start, late_mins)
+        # If outside check-in window → always late, else check work_start threshold
+        outside_ci_window = False
+        if ci_start is not None and ci_end is not None:
+            try:
+                outside_ci_window = not (ci_start <= now_time <= ci_end)
+            except TypeError:
+                outside_ci_window = False
+        status = "late" if outside_ci_window else _determine_status(now, work_start, late_mins)
         await db.execute(
             text(
                 "INSERT INTO attendance (employee_id, company_id, attendance_date, check_in, status, match_score) "

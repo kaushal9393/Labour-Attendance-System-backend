@@ -8,9 +8,8 @@ from sqlalchemy import text
 
 from core.database import get_db
 from core.security import get_current_user
-from core.face_service import check_liveness, get_embedding
 from core.cache import cache
-from core import face_cache
+from core.azure_face_service import detect_face, identify_face
 from models.schemas import (
     ScanRequest, ScanResponse,
     TodayAttendanceResponse, AttendanceRecord,
@@ -20,10 +19,6 @@ from models.schemas import (
 
 logger = logging.getLogger("garage_api.attendance")
 router = APIRouter(prefix="/api/attendance", tags=["Attendance"])
-
-# ArcFace cosine similarity: same-person ~0.6–1.0, different-person ~0.0–0.4
-# 0.60 gives low false-positive rate while still matching across lighting/angle
-COSINE_THRESHOLD = 0.60
 
 
 # ─── POST /api/attendance/scan ────────────────────────────────
@@ -47,67 +42,34 @@ async def scan_face(
         company_id = company[0]
         cache.set(cache_key, company_id, ttl_seconds=3600)
 
-    import cv2
-    from core.face_service import decode_base64_image, extract_embedding
-
-    img = decode_base64_image(payload.image)
-    if img is None:
-        return ScanResponse(success=False, reason="image_decode_failed")
-
-    # Resize to max 640px — large enough for Haar to detect face, not too slow
-    h, w = img.shape[:2]
-    if max(h, w) > 640:
-        scale = 640 / max(h, w)
-        img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
-
-    # Detect face first — if no face found, reject immediately (no fallback)
-    embedding = extract_embedding(img)
-    if embedding is None:
+    # 3. Detect face via Azure — get faceId
+    face_id = detect_face(payload.image)
+    if face_id is None:
         return ScanResponse(success=False, reason="face_not_detected")
 
-    # 3. Match against in-memory face cache (zero DB call)
-    result = face_cache.find_best_match(company_id, embedding, COSINE_THRESHOLD)
-
-    if result is None:
-        # Fallback to DB if cache is empty (e.g. cache load failed at startup)
-        vec_str = "[" + ",".join(str(x) for x in embedding) + "]"
-        row = await db.execute(
-            text(
-                "SELECT e.id, e.name, "
-                "1 - (fv.face_vector <=> CAST(:vec AS vector)) AS similarity "
-                "FROM face_vectors fv "
-                "JOIN employees e ON e.id = fv.employee_id "
-                "WHERE e.company_id = :cid AND e.status = 'active' "
-                "ORDER BY fv.face_vector <=> CAST(:vec AS vector) ASC "
-                "LIMIT 1"
-            ),
-            {"vec": vec_str, "cid": company_id},
-        )
-        db_match = row.fetchone()
-        if not db_match or float(db_match[2]) < COSINE_THRESHOLD:
-            logger.info(f"[Scan] No match for company_id={company_id}")
-            return ScanResponse(success=False, reason="face_not_recognized")
-        emp_id, emp_name, similarity = db_match[0], db_match[1], float(db_match[2])
-    else:
-        emp_id, emp_name, similarity = result
-
-    # Always verify employee is still active in DB — guards against stale cache
-    status_row = await db.execute(
-        text("SELECT status FROM employees WHERE id = :eid AND company_id = :cid"),
-        {"eid": emp_id, "cid": company_id},
-    )
-    emp_status = status_row.fetchone()
-    if not emp_status or emp_status[0] == "deleted":
-        # Remove from cache so future scans don't hit DB every time
-        face_cache.remove_employee(company_id=company_id, emp_id=emp_id)
-        logger.info(f"[Scan] Rejected deleted employee id={emp_id}")
+    # 4. Identify face against company PersonGroup
+    match = identify_face(company_id, face_id)
+    if match is None:
+        logger.info(f"[Scan] No match for company_id={company_id}")
         return ScanResponse(success=False, reason="face_not_recognized")
 
-    similarity = float(similarity)
-    logger.info(
-        f"[Scan] Top match: {emp_name} (id={emp_id}) "
-        f"similarity={similarity:.4f} threshold={COSINE_THRESHOLD}"
+    azure_person_id, similarity = match
+
+    # 5. Lookup employee by azure_person_id
+    emp_row = await db.execute(
+        text(
+            "SELECT id, name, status FROM employees "
+            "WHERE azure_person_id = :pid AND company_id = :cid"
+        ),
+        {"pid": azure_person_id, "cid": company_id},
     )
+    emp = emp_row.fetchone()
+    if not emp or emp[2] == "deleted":
+        logger.info(f"[Scan] Employee not found or deleted for person_id={azure_person_id}")
+        return ScanResponse(success=False, reason="face_not_recognized")
+
+    emp_id, emp_name = emp[0], emp[1]
+    logger.info(f"[Scan] Match: {emp_name} (id={emp_id}) confidence={similarity:.4f}")
 
     # Server runs UTC on Railway; window times in DB are IST (UTC+5:30)
     from datetime import timezone

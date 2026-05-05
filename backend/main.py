@@ -1,10 +1,8 @@
 """
 main.py — Garage Attendance System API
-FastAPI + Neon PostgreSQL + ArcFace + MediaPipe
+FastAPI + Neon PostgreSQL + Azure Face API
 """
 import os
-# Must be set before TensorFlow/Keras is imported anywhere.
-os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
 import logging
 from contextlib import asynccontextmanager
 
@@ -14,11 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from dotenv import load_dotenv
 
-import asyncio
-
 from core.database import ping_db, AsyncSessionLocal
-from core.face_service import warmup_models
-from core import face_cache
 from routers import auth, employees, attendance, salary, reports, settings as settings_router, notifications as notifications_router, working_days as working_days_router
 
 load_dotenv()
@@ -79,38 +73,25 @@ async def lifespan(app: FastAPI):
                     UNIQUE (company_id, month, year)
                 )
             """))
+            # Azure Face API — store person_id per employee
+            await _session.execute(_text("""
+                ALTER TABLE employees
+                    ADD COLUMN IF NOT EXISTS azure_person_id TEXT
+            """))
             await _session.commit()
         logger.info("✅ DB migration complete")
     except Exception as _e:
         logger.warning(f"⚠️ DB migration warning: {_e}")
 
-    # Preload face recognition models so first request is fast
-    logger.info("🔄 Warming up face recognition models…")
-    loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, warmup_models)
-    logger.info("✅ Face models ready")
-
-    # Load all face vectors into memory — scan will use cache, not DB
-    logger.info("🔄 Loading face vectors into memory cache…")
+    # Verify Azure Face API credentials at startup
     try:
-        from sqlalchemy import text as sa_text
-        import json
-        async with AsyncSessionLocal() as session:
-            result = await session.execute(sa_text(
-                "SELECT fv.employee_id, e.company_id, e.name, "
-                "fv.face_vector::text AS face_vector "
-                "FROM face_vectors fv "
-                "JOIN employees e ON e.id = fv.employee_id "
-                "WHERE e.status = 'active'"
-            ))
-            rows = result.fetchall()
-            parsed = [
-                (r[0], r[1], r[2], json.loads(r[3]))
-                for r in rows
-            ]
-        await loop.run_in_executor(None, face_cache.load_all, parsed)
+        from core.azure_face_service import AZURE_ENDPOINT, AZURE_KEY
+        if AZURE_ENDPOINT and AZURE_KEY:
+            logger.info("✅ Azure Face API configured")
+        else:
+            logger.warning("⚠️ AZURE_FACE_ENDPOINT or AZURE_FACE_KEY not set")
     except Exception as e:
-        logger.warning(f"⚠️ Face cache load failed (will use DB fallback): {e}")
+        logger.warning(f"⚠️ Azure Face API check failed: {e}")
     yield
     # ── Shutdown ──
     logger.info("Shutting down…")

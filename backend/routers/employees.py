@@ -2,15 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from typing import List
-import base64
-import cv2
-import numpy as np
 
 from core.database import get_db
 from core.security import get_current_user
 from core.cache import cache
-from core.face_service import process_registration_photos
-from core import face_cache
+from core.azure_face_service import register_employee_faces, delete_person
 from utils.cloudinary_helper import upload_base64_photo
 from models.schemas import EmployeeCreate, EmployeeUpdate, EmployeeResponse, MessageResponse
 
@@ -58,37 +54,27 @@ async def register_employee(
 ):
     company_id = user["company_id"]
 
-    # 0. Validate images before processing
-    for photo_b64 in payload.photos:
-        try:
-            b64_str = photo_b64.split(",", 1)[1] if "," in photo_b64 else photo_b64
-            contents = base64.b64decode(b64_str)
-            if not contents or len(contents) < 1000:
-                raise HTTPException(status_code=400, detail="Invalid or empty image")
-            
-            np_arr = np.frombuffer(contents, np.uint8)
-            img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-            if img is None:
-                raise HTTPException(status_code=400, detail="Could not decode image")
-        except Exception as e:
-            if isinstance(e, HTTPException):
-                raise e
-            raise HTTPException(status_code=400, detail="Invalid image encoding")
-
-    # 1. Generate ArcFace embeddings from 25 photos
+    # 1. Register all photos with Azure Face API → get azure_person_id
     try:
-        face_data = process_registration_photos(payload.photos)
+        azure_person_id = register_employee_faces(
+            company_id=company_id,
+            employee_name=payload.name,
+            photos=payload.photos,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Azure Face registration failed: {exc}")
 
-    # 2. Upload profile photo to Cloudinary
-    profile_url = upload_base64_photo(face_data["profile_b64"])
+    # 2. Upload profile photo to Cloudinary (use first photo)
+    profile_url = upload_base64_photo(payload.photos[0])
 
-    # 3. Insert employee
-    result = await db.execute(
+    # 3. Insert employee with azure_person_id
+    await db.execute(
         text(
-            "INSERT INTO employees (company_id, name, phone, monthly_salary, joining_date, profile_photo_url) "
-            "VALUES (:cid, :name, :phone, :salary, :jdate, :photo_url) RETURNING id"
+            "INSERT INTO employees (company_id, name, phone, monthly_salary, joining_date, "
+            "profile_photo_url, azure_person_id) "
+            "VALUES (:cid, :name, :phone, :salary, :jdate, :photo_url, :azure_id) RETURNING id"
         ),
         {
             "cid":       company_id,
@@ -97,34 +83,11 @@ async def register_employee(
             "salary":    float(payload.monthly_salary),
             "jdate":     payload.joining_date,
             "photo_url": profile_url,
+            "azure_id":  azure_person_id,
         },
     )
-    employee_id = result.scalar_one()
-
-    # 4. Store 3 face vectors (front / left / right)
-    for angle in ("front", "left", "right"):
-        embedding = face_data[angle]
-        # Convert list to pgvector literal  '[0.1, 0.2, ...]'
-        vec_str = "[" + ",".join(str(x) for x in embedding) + "]"
-        await db.execute(
-            text(
-                "INSERT INTO face_vectors (employee_id, face_vector, angle_type) "
-                "VALUES (:eid, CAST(:vec AS vector), :angle)"
-            ),
-            {"eid": employee_id, "vec": vec_str, "angle": angle},
-        )
-
     await db.commit()
     cache.invalidate(f"employees_list_{company_id}")
-
-    # Update face cache so new employee is immediately scannable
-    face_cache.add_employee(
-        company_id=company_id,
-        emp_id=employee_id,
-        name=payload.name,
-        vectors=[face_data["front"], face_data["left"], face_data["right"]],
-    )
-
     return MessageResponse(message=f"Employee '{payload.name}' registered successfully")
 
 
@@ -137,7 +100,6 @@ async def update_employee(
 ):
     company_id = user["company_id"]
 
-    # Build dynamic SET clause
     updates = {}
     if payload.name           is not None: updates["name"]           = payload.name
     if payload.phone          is not None: updates["phone"]          = payload.phone
@@ -169,15 +131,25 @@ async def delete_employee(
 ):
     company_id = user["company_id"]
 
-    # Verify employee belongs to this company
+    # Get employee + azure_person_id
     row = await db.execute(
-        text("SELECT id FROM employees WHERE id = :eid AND company_id = :cid"),
+        text("SELECT id, azure_person_id FROM employees WHERE id = :eid AND company_id = :cid"),
         {"eid": employee_id, "cid": company_id},
     )
-    if not row.fetchone():
+    emp = row.fetchone()
+    if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
 
-    # Delete all related data permanently
+    azure_person_id = emp[1]
+
+    # Delete from Azure Face API (don't block if fails)
+    if azure_person_id:
+        try:
+            delete_person(company_id=company_id, person_id=azure_person_id)
+        except Exception:
+            pass
+
+    # Delete all related DB data
     await db.execute(text("DELETE FROM salary_records WHERE employee_id = :eid"), {"eid": employee_id})
     await db.execute(text("DELETE FROM attendance    WHERE employee_id = :eid"), {"eid": employee_id})
     await db.execute(text("DELETE FROM face_vectors  WHERE employee_id = :eid"), {"eid": employee_id})
@@ -186,5 +158,4 @@ async def delete_employee(
 
     await db.commit()
     cache.invalidate(f"employees_list_{company_id}")
-    face_cache.remove_employee(company_id=company_id, emp_id=employee_id)
     return MessageResponse(message="Employee deleted")

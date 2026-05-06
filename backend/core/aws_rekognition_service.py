@@ -60,13 +60,12 @@ def ensure_face_list(company_id: int) -> None:
     cid = _collection_id(company_id)
     client = _get_client()
     try:
-        client.describe_collection(CollectionId=cid)
+        client.create_collection(CollectionId=cid)
+        logger.info(f"[AWS] Collection created: {cid}")
     except ClientError as e:
-        if e.response["Error"]["Code"] == "ResourceNotFoundException":
-            client.create_collection(CollectionId=cid)
-            logger.info(f"[AWS] Collection created: {cid}")
-        else:
-            raise
+        if e.response["Error"]["Code"] == "ResourceAlreadyExistsException":
+            return
+        raise
 
 
 def detect_face_from_bytes(img_bytes: bytes) -> Optional[bool]:

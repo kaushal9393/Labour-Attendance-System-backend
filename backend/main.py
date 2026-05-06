@@ -1,6 +1,6 @@
 """
 main.py — Garage Attendance System API
-FastAPI + Neon PostgreSQL + Azure Face API
+FastAPI + Neon PostgreSQL + AWS Rekognition
 """
 import os
 import logging
@@ -73,7 +73,8 @@ async def lifespan(app: FastAPI):
                     UNIQUE (company_id, month, year)
                 )
             """))
-            # Azure Face API — store person_id per employee
+            # Face provider — column name kept as azure_person_id for backwards
+            # compatibility; now stores AWS Rekognition FaceIds (JSON array).
             await _session.execute(_text("""
                 ALTER TABLE employees
                     ADD COLUMN IF NOT EXISTS azure_person_id TEXT
@@ -83,15 +84,17 @@ async def lifespan(app: FastAPI):
     except Exception as _e:
         logger.warning(f"⚠️ DB migration warning: {_e}")
 
-    # Verify Azure Face API credentials at startup
+    # Verify AWS Rekognition credentials at startup
     try:
-        from core.azure_face_service import AZURE_ENDPOINT, AZURE_KEY
-        if AZURE_ENDPOINT and AZURE_KEY:
-            logger.info("✅ Azure Face API configured")
+        from core.aws_rekognition_service import (
+            AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_KEY,
+        )
+        if AWS_ACCESS_KEY_ID and AWS_SECRET_KEY:
+            logger.info(f"✅ AWS Rekognition configured (region={AWS_REGION})")
         else:
-            logger.warning("⚠️ AZURE_FACE_ENDPOINT or AZURE_FACE_KEY not set")
+            logger.warning("⚠️ AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY not set")
     except Exception as e:
-        logger.warning(f"⚠️ Azure Face API check failed: {e}")
+        logger.warning(f"⚠️ AWS Rekognition check failed: {e}")
     yield
     # ── Shutdown ──
     logger.info("Shutting down…")

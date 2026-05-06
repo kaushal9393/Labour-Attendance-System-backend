@@ -9,7 +9,7 @@ from sqlalchemy import text
 from core.database import get_db
 from core.security import get_current_user
 from core.cache import cache
-from core.azure_face_service import detect_face, find_similar
+from core.aws_rekognition_service import detect_face, find_similar
 from models.schemas import (
     ScanRequest, ScanResponse,
     TodayAttendanceResponse, AttendanceRecord,
@@ -42,14 +42,14 @@ async def scan_face(
         company_id = company[0]
         cache.set(cache_key, company_id, ttl_seconds=3600)
 
-    # 3. Detect face via Azure — get temporary faceId
-    face_id = detect_face(payload.image)
-    if face_id is None:
+    # 3. Detect face presence (AWS Rekognition)
+    has_face = detect_face(payload.image)
+    if not has_face:
         return ScanResponse(success=False, reason="face_not_detected")
 
-    # 4. FindSimilar against company FaceList
+    # 4. SearchFacesByImage against company collection
     import json as _json
-    match = find_similar(company_id, face_id)
+    match = find_similar(company_id, payload.image)
     if match is None:
         logger.info(f"[Scan] No match for company_id={company_id}")
         return ScanResponse(success=False, reason="face_not_recognized")

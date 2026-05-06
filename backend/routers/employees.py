@@ -7,7 +7,7 @@ import json
 from core.database import get_db
 from core.security import get_current_user
 from core.cache import cache
-from core.azure_face_service import register_employee_faces, delete_faces_from_list, update_face_userdata
+from core.aws_rekognition_service import register_employee_faces, delete_faces_from_list, update_face_userdata
 from utils.cloudinary_helper import upload_base64_photo
 from models.schemas import EmployeeCreate, EmployeeUpdate, EmployeeResponse, MessageResponse
 
@@ -55,7 +55,7 @@ async def register_employee(
 ):
     company_id = user["company_id"]
 
-    # 1. Add photos to Azure FaceList — use "pending" as temp userData
+    # 1. Index photos into AWS Rekognition collection — use "pending" as temp ExternalImageId
     try:
         persisted_face_ids = register_employee_faces(
             company_id=company_id,
@@ -65,7 +65,7 @@ async def register_employee(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Azure Face registration failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"AWS Rekognition registration failed: {exc}")
 
     # 2. Upload profile photo to Cloudinary
     profile_url = upload_base64_photo(payload.photos[0])
@@ -90,7 +90,7 @@ async def register_employee(
     employee_id = result.scalar_one()
     await db.commit()
 
-    # 4. Update userData on each face with real employee_id
+    # 4. (No-op for AWS — DB already maps face_ids -> employee_id)
     for fid in persisted_face_ids:
         try:
             update_face_userdata(company_id, fid, employee_id)
@@ -149,7 +149,7 @@ async def delete_employee(
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
 
-    # Delete faces from Azure FaceList
+    # Delete faces from AWS Rekognition collection
     face_ids_json = emp[1]
     if face_ids_json:
         try:

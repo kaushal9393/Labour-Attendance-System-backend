@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# v5 — Azure Face API (FaceList + FindSimilar), no ONNX/insightface
+# v6 — AWS Rekognition (Collections + SearchFacesByImage), no ONNX/insightface
 FROM python:3.10-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1

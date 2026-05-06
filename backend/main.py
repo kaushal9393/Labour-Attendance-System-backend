@@ -10,10 +10,11 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
 from core.database import ping_db, AsyncSessionLocal
-from routers import auth, employees, attendance, salary, reports, settings as settings_router, notifications as notifications_router, working_days as working_days_router
+from routers import auth, employees, attendance, salary, reports, settings as settings_router, notifications as notifications_router, working_days as working_days_router, liveness as liveness_router
 
 load_dotenv()
 
@@ -145,3 +146,9 @@ app.include_router(reports.router)
 app.include_router(settings_router.router)
 app.include_router(notifications_router.router)
 app.include_router(working_days_router.router)
+app.include_router(liveness_router.router)
+
+# ── Liveness static UI (React build) ──
+_liveness_dir = os.path.join(os.path.dirname(__file__), "static", "liveness")
+if os.path.isdir(_liveness_dir):
+    app.mount("/liveness", StaticFiles(directory=_liveness_dir, html=True), name="liveness")

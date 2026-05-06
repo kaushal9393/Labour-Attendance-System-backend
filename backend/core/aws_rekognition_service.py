@@ -198,6 +198,28 @@ def register_employee_faces(company_id: int, employee_id_placeholder: str, photo
     return face_ids
 
 
+def create_liveness_session() -> str:
+    """Create a Face Liveness session. Returns SessionId."""
+    resp = _get_client().create_face_liveness_session()
+    return resp["SessionId"]
+
+
+def get_liveness_result(session_id: str) -> dict:
+    """
+    Get liveness session results.
+    Returns dict with: confidence (0-100), status (SUCCEEDED/FAILED/EXPIRED),
+    reference_image_bytes (best frame for face matching).
+    """
+    resp = _get_client().get_face_liveness_session_results(SessionId=session_id)
+    ref_image = resp.get("ReferenceImage", {})
+    image_bytes = ref_image.get("Bytes")
+    return {
+        "status":     resp.get("Status"),
+        "confidence": float(resp.get("Confidence", 0)),
+        "reference_image_bytes": image_bytes,
+    }
+
+
 def update_face_userdata(company_id: int, face_id: str, employee_id: int) -> None:
     """
     Rekognition does not support mutating ExternalImageId after indexing.

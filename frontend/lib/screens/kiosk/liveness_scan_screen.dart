@@ -25,10 +25,17 @@ class _LivenessScanScreenState extends State<LivenessScanScreen> {
   bool _resultHandled = false;
   bool _loading = true;
   bool _permGranted = false;
+  // Generated once per screen visit so the WebView mounts a fresh instance
+  // and the React app fetches a brand new AWS Liveness session.
+  late final int _cacheBust;
+  late final String _url;
 
   @override
   void initState() {
     super.initState();
+    _cacheBust = DateTime.now().millisecondsSinceEpoch;
+    _url =
+        '${AppConstants.livenessUrl}?company_code=${AppConstants.companyCode}&t=$_cacheBust';
     _bootstrap();
   }
 
@@ -122,20 +129,13 @@ class _LivenessScanScreenState extends State<LivenessScanScreen> {
   }
 
   Widget _buildWebView() {
-    // Cache-bust on every mount so the React app remounts and creates a
-    // fresh AWS Liveness session — without this, the auto-retry from
-    // failed_screen reuses an expired session and immediately falls through.
-    final cacheBust = DateTime.now().millisecondsSinceEpoch;
-    final url =
-        '${AppConstants.livenessUrl}?company_code=${AppConstants.companyCode}&t=$cacheBust';
-
-    // ValueKey forces Flutter to dispose the prior WebView and create a
-    // fresh native view on every mount — without this, the second visit
-    // reuses the previous WebView instance which has already produced
-    // (and consumed) one Liveness session.
+    // _cacheBust + _url are set once in initState — using a stable key
+    // here avoids re-mounting the WebView on every setState (which would
+    // create a fresh AWS Liveness session each rebuild and bill us per
+    // unused session).
     return InAppWebView(
-      key: ValueKey(cacheBust),
-      initialUrlRequest: URLRequest(url: WebUri(url)),
+      key: ValueKey(_cacheBust),
+      initialUrlRequest: URLRequest(url: WebUri(_url)),
       initialSettings: InAppWebViewSettings(
         // Camera + mic streaming
         mediaPlaybackRequiresUserGesture: false,

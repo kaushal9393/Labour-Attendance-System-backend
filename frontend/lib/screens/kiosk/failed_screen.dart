@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme.dart';
@@ -13,8 +12,6 @@ class FailedScreen extends StatefulWidget {
 class _FailedScreenState extends State<FailedScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
-  int _countdown = 4;
-  Timer? _timer;
 
   @override
   void initState() {
@@ -22,19 +19,13 @@ class _FailedScreenState extends State<FailedScreen>
     _controller = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 500));
     _controller.forward();
-
-    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
-      setState(() => _countdown--);
-      if (_countdown <= 0) {
-        t.cancel();
-        if (mounted) context.go('/kiosk/scan');
-      }
-    });
+    // Auto-retry intentionally disabled for liveness flow: the AWS session
+    // expires fast and an automatic retry tends to fire before the WebView
+    // has cleaned up. User taps "Try Again" instead.
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -92,12 +83,6 @@ class _FailedScreenState extends State<FailedScreen>
                   icon: const Icon(Icons.refresh),
                   label: const Text('Try Again',
                       style: TextStyle(fontWeight: FontWeight.w700)),
-                ),
-                const SizedBox(height: 28),
-                Text(
-                  'Auto-retry in $_countdown…',
-                  style: const TextStyle(
-                      color: AppTheme.textSecondary, fontSize: 14),
                 ),
               ],
             ),

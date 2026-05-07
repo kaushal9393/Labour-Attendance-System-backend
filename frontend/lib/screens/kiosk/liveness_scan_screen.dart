@@ -122,7 +122,12 @@ class _LivenessScanScreenState extends State<LivenessScanScreen> {
   }
 
   Widget _buildWebView() {
-    const url = '${AppConstants.livenessUrl}?company_code=${AppConstants.companyCode}';
+    // Cache-bust on every mount so the React app remounts and creates a
+    // fresh AWS Liveness session — without this, the auto-retry from
+    // failed_screen reuses an expired session and immediately falls through.
+    final cacheBust = DateTime.now().millisecondsSinceEpoch;
+    final url =
+        '${AppConstants.livenessUrl}?company_code=${AppConstants.companyCode}&t=$cacheBust';
 
     return InAppWebView(
       initialUrlRequest: URLRequest(url: WebUri(url)),
@@ -141,21 +146,14 @@ class _LivenessScanScreenState extends State<LivenessScanScreen> {
         // Mixed content sometimes triggers when AWS uses ws://; force HTTPS only
         mixedContentMode: MixedContentMode.MIXED_CONTENT_NEVER_ALLOW,
       ),
-      onWebViewCreated: (controller) {
+      onWebViewCreated: (controller) async {
         controller.addJavaScriptHandler(
           handlerName: 'FlutterLiveness',
           callback: _onLivenessMessage,
         );
-
-        // Bridge: AWS Amplify Liveness posts results via window.FlutterLiveness.postMessage
-        // — we expose a shim that forwards into the InAppWebView handler.
-        controller.evaluateJavascript(source: '''
-          window.FlutterLiveness = {
-            postMessage: function(msg) {
-              window.flutter_inappwebview.callHandler('FlutterLiveness', msg);
-            }
-          };
-        ''');
+        // Drop any stored cache/cookies left over from a previous failed
+        // session before the page request fires.
+        await InAppWebViewController.clearAllCache();
       },
       onLoadStop: (controller, _) async {
         // Re-inject the bridge after page load — initial injection runs before

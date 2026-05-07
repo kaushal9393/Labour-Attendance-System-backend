@@ -26,8 +26,13 @@ from core.aws_rekognition_service import (
 logger = logging.getLogger("garage_api.liveness")
 router = APIRouter(prefix="/api/liveness", tags=["Liveness"])
 
-# Minimum AWS liveness confidence (0-100). 90 is AWS recommended for production.
-LIVENESS_MIN_CONFIDENCE = 90.0
+import os
+
+# Minimum AWS liveness confidence (0-100). Spoofing attempts typically score
+# below 50; real users on mobile cameras land in the 70-95 range depending on
+# lighting. Default 70 keeps spoof rejection while accepting real users; tune
+# via LIVENESS_MIN_CONFIDENCE env var if needed.
+LIVENESS_MIN_CONFIDENCE = float(os.getenv("LIVENESS_MIN_CONFIDENCE", "70"))
 
 
 class CreateSessionResponse(BaseModel):

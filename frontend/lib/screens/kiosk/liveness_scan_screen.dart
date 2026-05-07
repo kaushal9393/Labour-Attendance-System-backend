@@ -129,7 +129,12 @@ class _LivenessScanScreenState extends State<LivenessScanScreen> {
     final url =
         '${AppConstants.livenessUrl}?company_code=${AppConstants.companyCode}&t=$cacheBust';
 
+    // ValueKey forces Flutter to dispose the prior WebView and create a
+    // fresh native view on every mount — without this, the second visit
+    // reuses the previous WebView instance which has already produced
+    // (and consumed) one Liveness session.
     return InAppWebView(
+      key: ValueKey(cacheBust),
       initialUrlRequest: URLRequest(url: WebUri(url)),
       initialSettings: InAppWebViewSettings(
         // Camera + mic streaming
@@ -146,14 +151,15 @@ class _LivenessScanScreenState extends State<LivenessScanScreen> {
         // Mixed content sometimes triggers when AWS uses ws://; force HTTPS only
         mixedContentMode: MixedContentMode.MIXED_CONTENT_NEVER_ALLOW,
       ),
-      onWebViewCreated: (controller) async {
+      onWebViewCreated: (controller) {
         controller.addJavaScriptHandler(
           handlerName: 'FlutterLiveness',
           callback: _onLivenessMessage,
         );
-        // Drop any stored cache/cookies left over from a previous failed
-        // session before the page request fires.
-        await InAppWebViewController.clearAllCache();
+        // NOTE: Do NOT call clearAllCache() here — it also resets the
+        // WebView's internal permission state, so AWS Liveness then sits on
+        // "Waiting for you to allow camera permission" forever on the second
+        // attempt. Cache-busting via the URL query param is enough.
       },
       onLoadStop: (controller, _) async {
         // Re-inject the bridge after page load — initial injection runs before
@@ -169,8 +175,17 @@ class _LivenessScanScreenState extends State<LivenessScanScreen> {
         if (mounted) setState(() => _loading = false);
       },
       onPermissionRequest: (controller, request) async {
+        // Some Android OEMs (Vivo, Xiaomi) hand us an empty resources list
+        // even though the page asked for camera+mic. Always grant both so
+        // the AWS Liveness flow can proceed.
+        final resources = request.resources.isEmpty
+            ? <PermissionResourceType>[
+                PermissionResourceType.CAMERA,
+                PermissionResourceType.MICROPHONE,
+              ]
+            : request.resources;
         return PermissionResponse(
-          resources: request.resources,
+          resources: resources,
           action: PermissionResponseAction.GRANT,
         );
       },

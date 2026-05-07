@@ -2,17 +2,18 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:webview_flutter/webview_flutter.dart';
-import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../../core/constants.dart';
 import '../../core/theme.dart';
 
-/// Hosts the AWS Face Liveness web flow inside a WebView and routes the
-/// final verify result to the existing success/failed screens.
+/// Hosts the AWS Face Liveness web flow inside an InAppWebView.
+/// flutter_inappwebview is used (not webview_flutter) because it has robust
+/// getUserMedia + WebSocket support, which AWS Amplify Liveness needs to
+/// stream the camera feed during the analysis phase.
 class LivenessScanScreen extends StatefulWidget {
   const LivenessScanScreen({super.key});
 
@@ -21,9 +22,9 @@ class LivenessScanScreen extends StatefulWidget {
 }
 
 class _LivenessScanScreenState extends State<LivenessScanScreen> {
-  late final WebViewController _controller;
   bool _resultHandled = false;
   bool _loading = true;
+  bool _permGranted = false;
 
   @override
   void initState() {
@@ -32,63 +33,31 @@ class _LivenessScanScreenState extends State<LivenessScanScreen> {
   }
 
   Future<void> _bootstrap() async {
-    final granted = await Permission.camera.request();
-    if (!granted.isGranted) {
+    final cam = await Permission.camera.request();
+    final mic = await Permission.microphone.request();
+    if (!cam.isGranted || !mic.isGranted) {
       _failWithReason('camera_permission_denied');
       return;
     }
-
-    const url = '${AppConstants.livenessUrl}?company_code=${AppConstants.companyCode}';
-
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(Colors.black)
-      ..addJavaScriptChannel(
-        'FlutterLiveness',
-        onMessageReceived: _onLivenessMessage,
-      )
-      ..setNavigationDelegate(NavigationDelegate(
-        onPageFinished: (_) {
-          if (mounted) setState(() => _loading = false);
-        },
-        onWebResourceError: (err) {
-          // Only treat top-level navigation failures as fatal — sub-resource
-          // errors (e.g. analytics) should not break the flow.
-          if (err.isForMainFrame ?? false) {
-            _failWithReason('webview_load_error');
-          }
-        },
-      ))
-      ..loadRequest(Uri.parse(url));
-
-    // Android: explicitly grant the WebView access to camera/microphone when
-    // the AWS Amplify Liveness component requests it. Without this the
-    // component immediately errors and falls through to the failed screen.
-    final platform = _controller.platform;
-    if (platform is AndroidWebViewController) {
-      AndroidWebViewController.enableDebugging(false);
-      await platform.setMediaPlaybackRequiresUserGesture(false);
-      await platform.setOnPlatformPermissionRequest((request) {
-        request.grant();
-      });
-    }
-
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() => _permGranted = true);
   }
 
-  void _onLivenessMessage(JavaScriptMessage msg) {
+  void _onLivenessMessage(List<dynamic> args) {
     if (_resultHandled) return;
+    if (args.isEmpty) return;
     _resultHandled = true;
 
     Map<String, dynamic> data;
     try {
-      data = jsonDecode(msg.message) as Map<String, dynamic>;
+      data = jsonDecode(args.first.toString()) as Map<String, dynamic>;
     } catch (_) {
       _failWithReason('bad_response');
       return;
     }
 
     HapticFeedback.mediumImpact();
+    if (!mounted) return;
 
     if (data['success'] == true) {
       context.go('/kiosk/success', extra: {
@@ -115,7 +84,7 @@ class _LivenessScanScreenState extends State<LivenessScanScreen> {
       body: SafeArea(
         child: Stack(
           children: [
-            WebViewWidget(controller: _controller),
+            if (_permGranted) _buildWebView(),
             if (_loading)
               const Center(
                 child: Column(
@@ -135,7 +104,7 @@ class _LivenessScanScreenState extends State<LivenessScanScreen> {
               left: 8,
               child: IconButton(
                 icon: const Icon(Icons.close, color: Colors.white),
-                onPressed: () => _exit(),
+                onPressed: _exit,
               ),
             ),
             Positioned(
@@ -149,6 +118,69 @@ class _LivenessScanScreenState extends State<LivenessScanScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildWebView() {
+    const url = '${AppConstants.livenessUrl}?company_code=${AppConstants.companyCode}';
+
+    return InAppWebView(
+      initialUrlRequest: URLRequest(url: WebUri(url)),
+      initialSettings: InAppWebViewSettings(
+        // Camera + mic streaming
+        mediaPlaybackRequiresUserGesture: false,
+        allowsInlineMediaPlayback: true,
+        iframeAllow: 'camera; microphone',
+        iframeAllowFullscreen: true,
+        // Required so AWS WebSocket origin checks pass
+        useHybridComposition: true,
+        // Don't auto-grant cookies/clipboard, but allow JS
+        javaScriptEnabled: true,
+        javaScriptCanOpenWindowsAutomatically: false,
+        transparentBackground: false,
+        // Mixed content sometimes triggers when AWS uses ws://; force HTTPS only
+        mixedContentMode: MixedContentMode.MIXED_CONTENT_NEVER_ALLOW,
+      ),
+      onWebViewCreated: (controller) {
+        controller.addJavaScriptHandler(
+          handlerName: 'FlutterLiveness',
+          callback: _onLivenessMessage,
+        );
+
+        // Bridge: AWS Amplify Liveness posts results via window.FlutterLiveness.postMessage
+        // — we expose a shim that forwards into the InAppWebView handler.
+        controller.evaluateJavascript(source: '''
+          window.FlutterLiveness = {
+            postMessage: function(msg) {
+              window.flutter_inappwebview.callHandler('FlutterLiveness', msg);
+            }
+          };
+        ''');
+      },
+      onLoadStop: (controller, _) async {
+        // Re-inject the bridge after page load — initial injection runs before
+        // the React app boots, so a second pass guarantees window.FlutterLiveness
+        // exists when the React code reads it.
+        await controller.evaluateJavascript(source: '''
+          window.FlutterLiveness = {
+            postMessage: function(msg) {
+              window.flutter_inappwebview.callHandler('FlutterLiveness', msg);
+            }
+          };
+        ''');
+        if (mounted) setState(() => _loading = false);
+      },
+      onPermissionRequest: (controller, request) async {
+        return PermissionResponse(
+          resources: request.resources,
+          action: PermissionResponseAction.GRANT,
+        );
+      },
+      onConsoleMessage: (_, msg) {
+        // Visible via `adb logcat` — useful for diagnosing the AWS WebSocket
+        // handshake when something breaks in the field.
+        debugPrint('[Liveness console] ${msg.messageLevel}: ${msg.message}');
+      },
     );
   }
 

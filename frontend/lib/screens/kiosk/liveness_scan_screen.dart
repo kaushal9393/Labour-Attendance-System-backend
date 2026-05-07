@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../../core/constants.dart';
 import '../../core/theme.dart';
@@ -59,6 +60,18 @@ class _LivenessScanScreenState extends State<LivenessScanScreen> {
         },
       ))
       ..loadRequest(Uri.parse(url));
+
+    // Android: explicitly grant the WebView access to camera/microphone when
+    // the AWS Amplify Liveness component requests it. Without this the
+    // component immediately errors and falls through to the failed screen.
+    final platform = _controller.platform;
+    if (platform is AndroidWebViewController) {
+      AndroidWebViewController.enableDebugging(false);
+      await platform.setMediaPlaybackRequiresUserGesture(false);
+      await platform.setOnPlatformPermissionRequest((request) {
+        request.grant();
+      });
+    }
 
     if (mounted) setState(() {});
   }

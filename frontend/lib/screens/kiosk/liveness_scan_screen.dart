@@ -142,14 +142,15 @@ class _LivenessScanScreenState extends State<LivenessScanScreen> {
         allowsInlineMediaPlayback: true,
         iframeAllow: 'camera; microphone',
         iframeAllowFullscreen: true,
-        // Required so AWS WebSocket origin checks pass
         useHybridComposition: true,
-        // Don't auto-grant cookies/clipboard, but allow JS
         javaScriptEnabled: true,
         javaScriptCanOpenWindowsAutomatically: false,
         transparentBackground: false,
-        // Mixed content sometimes triggers when AWS uses ws://; force HTTPS only
         mixedContentMode: MixedContentMode.MIXED_CONTENT_NEVER_ALLOW,
+        // Disable HTTP cache so a "Try Again" navigation always pulls a fresh
+        // index.html (which in turn boots a brand new AWS Liveness session).
+        cacheEnabled: false,
+        clearCache: true,
       ),
       onWebViewCreated: (controller) {
         controller.addJavaScriptHandler(

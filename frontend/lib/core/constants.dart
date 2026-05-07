@@ -1,5 +1,6 @@
 class AppConstants {
   static const String baseUrl = 'https://labour-attendance-system-backend-production.up.railway.app/api';
+  static const String livenessUrl = 'https://labour-attendance-system-backend-production.up.railway.app/liveness/';
   static const String companyCode = 'GARAGE2024';
 
   // Shared preference keys

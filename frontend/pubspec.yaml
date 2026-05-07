@@ -31,6 +31,11 @@ dependencies:
   # On-device face detection (ML Kit) — crops face before sending to server
   google_mlkit_face_detection: ^0.11.0
 
+  # WebView for AWS Face Liveness flow (anti-spoofing)
+  webview_flutter: ^4.7.0
+  webview_flutter_android: ^3.16.0
+  webview_flutter_wkwebview: ^3.13.0
+
   # Firebase
   firebase_core: ^3.15.0
   firebase_messaging: ^15.2.4

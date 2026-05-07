@@ -7,7 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/constants.dart';
 import '../core/theme.dart';
 import '../screens/kiosk/splash_screen.dart';
-import '../screens/kiosk/face_scan_screen.dart';
+import '../screens/kiosk/liveness_scan_screen.dart';
 import '../screens/kiosk/success_screen.dart';
 import '../screens/kiosk/failed_screen.dart';
 import '../screens/kiosk/admin_panel_screen.dart';
@@ -53,7 +53,7 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // ── Kiosk ──────────────────────────────────────────────
       GoRoute(path: '/kiosk/splash',    builder: (_, __) => const SplashScreen()),
-      GoRoute(path: '/kiosk/scan',      builder: (_, __) => const FaceScanScreen()),
+      GoRoute(path: '/kiosk/scan',      builder: (_, __) => const LivenessScanScreen()),
       GoRoute(
         path: '/kiosk/success',
         builder: (_, state) {

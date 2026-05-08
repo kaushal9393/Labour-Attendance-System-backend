@@ -72,11 +72,13 @@ class _LivenessScanScreenState extends State<LivenessScanScreen>
         Uri.parse(url),
         customTabsOptions: CustomTabsOptions(
           colorSchemes: CustomTabsColorSchemes.defaults(
-            toolbarColor: AppTheme.surface,
+            // App's green so the toolbar reads as "part of the app".
+            toolbarColor: AppTheme.accent,
           ),
           shareState: CustomTabsShareState.off,
           urlBarHidingEnabled: true,
           showTitle: false,
+          instantAppsEnabled: false,
           closeButton: CustomTabsCloseButton(
             icon: CustomTabsCloseButtonIcons.back,
           ),

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Amplify } from "aws-amplify";
 import { FaceLivenessDetector } from "@aws-amplify/ui-react-liveness";
-import { ThemeProvider } from "@aws-amplify/ui-react";
+import { ThemeProvider, defaultDarkModeOverride } from "@aws-amplify/ui-react";
+import type { Theme } from "@aws-amplify/ui-react";
 import "@aws-amplify/ui-react/styles.css";
 
 // Cognito Identity Pool — gives unauthenticated browser users a temporary
@@ -18,12 +19,60 @@ Amplify.configure({
   },
 } as never);
 
-// API base — empty string means same origin (FastAPI serves both API + static).
+// Same green accent as the Flutter app so the in-Custom-Tab UI feels
+// continuous with the surrounding screens. The AWS oval/lights flash
+// stay random colors (security-critical) but everything else inherits
+// the brand colors.
+const APP_GREEN = "#0F7A5C";
+const APP_GREEN_DARK = "#0A5D45";
+const APP_BG = "#F5F7FA";
+const APP_TEXT = "#1F2A37";
+const APP_SUBTEXT = "#6B7280";
+
+const livenessTheme: Theme = {
+  name: "garage-liveness",
+  overrides: [defaultDarkModeOverride],
+  tokens: {
+    colors: {
+      brand: {
+        primary: {
+          10:  { value: "#E6F4EF" },
+          20:  { value: "#C0E3D7" },
+          40:  { value: "#5BB394" },
+          60:  { value: APP_GREEN },
+          80:  { value: APP_GREEN_DARK },
+          90:  { value: APP_GREEN_DARK },
+          100: { value: APP_GREEN_DARK },
+        },
+      },
+      background: {
+        primary: { value: "#FFFFFF" },
+        secondary: { value: APP_BG },
+      },
+      font: {
+        primary: { value: APP_TEXT },
+        secondary: { value: APP_SUBTEXT },
+      },
+    },
+    radii: {
+      small:  { value: "8px" },
+      medium: { value: "12px" },
+      large:  { value: "16px" },
+    },
+    components: {
+      button: {
+        primary: {
+          backgroundColor: { value: APP_GREEN },
+          _hover: { backgroundColor: { value: APP_GREEN_DARK } },
+        },
+      },
+    },
+  },
+};
+
 const API_BASE = "";
 const URL_PARAMS = new URLSearchParams(window.location.search);
 const COMPANY_CODE = URL_PARAMS.get("company_code") || "";
-// Mobile pre-allocates a scan_id and passes it on the URL so polling
-// from the app and the result POST land in the same bucket.
 const SCAN_ID = URL_PARAMS.get("scan_id");
 
 type Phase = "loading" | "ready" | "verifying" | "done" | "error";
@@ -32,11 +81,8 @@ export default function App() {
   const [phase, setPhase] = useState<Phase>("loading");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string>("");
-  const [result, setResult] = useState<any>(null);
   const sessionStartedRef = useRef(false);
 
-  // Kept only so the page is still usable when opened in a desktop browser
-  // for testing — the mobile app doesn't read this anymore.
   function postToHost(payload: any) {
     const msg = JSON.stringify(payload);
     console.log("[Liveness->Host]", msg);
@@ -44,6 +90,13 @@ export default function App() {
     if (w.FlutterLiveness && typeof w.FlutterLiveness.postMessage === "function") {
       w.FlutterLiveness.postMessage(msg);
     }
+  }
+
+  function dismissTab() {
+    setTimeout(() => {
+      try { window.close(); } catch { /* ignore */ }
+      window.location.replace("about:blank");
+    }, 150);
   }
 
   useEffect(() => {
@@ -63,7 +116,7 @@ export default function App() {
       })
       .catch((e) => {
         setPhase("error");
-        setErrorMsg(`Failed to start liveness: ${e.message}`);
+        setErrorMsg(`Connect nahi ho paa raha: ${e.message}`);
       });
   }, []);
 
@@ -81,121 +134,168 @@ export default function App() {
     })
       .then((r) => r.json())
       .then((data) => {
-        setResult(data);
         postToHost(data);
-        // Stay on the "Verifying…" view — the Flutter app polls
-        // /api/liveness/result/{scan_id} and shows the canonical
-        // success/failed screen. Try to close the tab so the user
-        // returns to the app immediately. window.close() only works
-        // for tabs the page itself opened, so we also navigate to
-        // about:blank as a graceful fallback (browsers won't auto-
-        // close Custom Tabs from arbitrary pages).
-        setTimeout(() => {
-          try {
-            window.close();
-          } catch (_) { /* ignore */ }
-          window.location.replace("about:blank");
-        }, 200);
+        dismissTab();
       })
-      .catch((e) => {
-        setPhase("error");
-        setErrorMsg(`Verification failed: ${e.message}`);
+      .catch(() => {
         postToHost({ success: false, reason: "network_error" });
-        setTimeout(() => {
-          try { window.close(); } catch (_) { /* ignore */ }
-          window.location.replace("about:blank");
-        }, 200);
+        dismissTab();
       });
   }
 
   function handleError(err: any) {
     setPhase("error");
-    setErrorMsg(err?.state || err?.message || "Liveness check failed");
+    setErrorMsg(err?.state || err?.message || "Scan complete nahi hua");
     postToHost({ success: false, reason: "liveness_error" });
+    dismissTab();
   }
 
   return (
-    <ThemeProvider>
+    <ThemeProvider theme={livenessTheme}>
       <div style={styles.container}>
         {phase === "loading" && (
-          <Centered
-            text="Starting face scan…"
-            subtext="Camera permission ko Allow karein."
-          />
-        )}
-        {phase === "error" && (
-          <Centered
-            text={`❌ ${errorMsg}`}
-            subtext="App pe vaapas jaakar dobara try karein."
+          <BrandPanel
+            title="Tayyari ho rahi hai"
+            subtitle="Camera permission ko Allow karein."
+            showSpinner
           />
         )}
         {phase === "verifying" && (
-          <Centered
-            text="Attendance mark ho rahi hai…"
-            subtext="Ek second ruko."
+          <BrandPanel
+            title="Attendance mark ho rahi hai"
+            subtitle="Bas ek second…"
+            showSpinner
           />
         )}
-        {phase === "done" && result && <ResultView result={result} />}
-        {phase === "ready" && sessionId && (
-          <FaceLivenessDetector
-            sessionId={sessionId}
-            region={REGION}
-            onAnalysisComplete={handleAnalysisComplete as any}
-            onError={handleError}
-            // Skip the AWS start screen — saves ~3 seconds and avoids the
-            // extra "Begin check" tap on every scan.
-            disableStartScreen={true}
+        {phase === "error" && (
+          <BrandPanel
+            title="Kuch galat ho gaya"
+            subtitle={errorMsg || "Dobara try karein."}
           />
+        )}
+        {phase === "ready" && sessionId && (
+          <div style={styles.detectorWrap}>
+            <FaceLivenessDetector
+              sessionId={sessionId}
+              region={REGION}
+              onAnalysisComplete={handleAnalysisComplete as any}
+              onError={handleError}
+              disableStartScreen={true}
+            />
+          </div>
         )}
       </div>
     </ThemeProvider>
   );
 }
 
-function Centered({ text, subtext }: { text: string; subtext?: string }) {
+function BrandPanel({
+  title,
+  subtitle,
+  showSpinner,
+}: {
+  title: string;
+  subtitle?: string;
+  showSpinner?: boolean;
+}) {
   return (
-    <div style={styles.center}>
-      <div style={styles.text}>{text}</div>
-      {subtext && <div style={styles.subtext}>{subtext}</div>}
-    </div>
-  );
-}
-
-function ResultView({ result }: { result: any }) {
-  const ok = result.success;
-  return (
-    <div style={styles.center}>
-      <div style={{ fontSize: 48, marginBottom: 12 }}>{ok ? "✅" : "❌"}</div>
-      <div style={styles.text}>
-        {ok ? `${result.employee_name} — ${result.action}` : (result.reason || "Failed")}
+    <div style={styles.panel}>
+      <div style={styles.logoCircle}>
+        <span style={styles.logoMark}>G</span>
       </div>
-      {ok && result.time && <div style={styles.subtext}>Time: {result.time}</div>}
-      {result.liveness_confidence != null && (
-        <div style={styles.subtext}>
-          Liveness: {result.liveness_confidence.toFixed(1)}%
+      <div style={styles.title}>{title}</div>
+      {subtitle && <div style={styles.subtitle}>{subtitle}</div>}
+      {showSpinner && (
+        <div style={styles.spinnerWrap}>
+          <div style={styles.spinner} />
         </div>
       )}
     </div>
   );
 }
 
+const spinnerKeyframes = `
+@keyframes garage-spin {
+  to { transform: rotate(360deg); }
+}
+`;
+
+if (typeof document !== "undefined" && !document.getElementById("garage-keyframes")) {
+  const tag = document.createElement("style");
+  tag.id = "garage-keyframes";
+  tag.innerHTML = spinnerKeyframes;
+  document.head.appendChild(tag);
+}
+
 const styles: Record<string, React.CSSProperties> = {
   container: {
     minHeight: "100vh",
-    background: "#f5f7fa",
+    width: "100%",
+    background: APP_BG,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     padding: 16,
+    fontFamily:
+      "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
   },
-  center: {
-    textAlign: "center",
+  panel: {
     background: "white",
-    borderRadius: 12,
-    padding: 32,
-    boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
-    maxWidth: 420,
+    borderRadius: 20,
+    padding: "36px 28px",
+    boxShadow: "0 8px 24px rgba(15, 122, 92, 0.08)",
+    width: "100%",
+    maxWidth: 360,
+    textAlign: "center",
+    border: "1px solid #E5E7EB",
   },
-  text: { fontSize: 18, fontWeight: 600, color: "#1f2a37" },
-  subtext: { marginTop: 8, fontSize: 14, color: "#6b7280" },
+  logoCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: "50%",
+    background: "#E6F4EF",
+    border: `2px solid ${APP_GREEN}`,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    margin: "0 auto 20px",
+  },
+  logoMark: {
+    color: APP_GREEN,
+    fontSize: 32,
+    fontWeight: 800,
+    letterSpacing: -1,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: 700,
+    color: APP_TEXT,
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: APP_SUBTEXT,
+    lineHeight: 1.5,
+  },
+  spinnerWrap: {
+    marginTop: 24,
+    display: "flex",
+    justifyContent: "center",
+  },
+  spinner: {
+    width: 28,
+    height: 28,
+    borderRadius: "50%",
+    border: `3px solid ${APP_BG}`,
+    borderTopColor: APP_GREEN,
+    animation: "garage-spin 0.9s linear infinite",
+  },
+  detectorWrap: {
+    width: "100%",
+    height: "100vh",
+    maxWidth: "100%",
+    display: "flex",
+    alignItems: "stretch",
+    justifyContent: "center",
+  },
 };

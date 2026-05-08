@@ -80,6 +80,45 @@ async def lifespan(app: FastAPI):
                 ALTER TABLE employees
                     ADD COLUMN IF NOT EXISTS azure_person_id TEXT
             """))
+            # Multi-tenant SaaS columns on companies
+            await _session.execute(_text("""
+                ALTER TABLE companies
+                    ADD COLUMN IF NOT EXISTS owner_phone VARCHAR(20),
+                    ADD COLUMN IF NOT EXISTS plan        VARCHAR(20) DEFAULT 'free',
+                    ADD COLUMN IF NOT EXISTS status      VARCHAR(20) DEFAULT 'active'
+            """))
+            await _session.execute(_text("UPDATE companies SET plan='free' WHERE plan IS NULL"))
+            # One-time tenant reset: drop the seeded GARAGE2024 demo data
+            # so the SaaS launch starts on a clean slate. Idempotent — only
+            # fires while the demo company still exists.
+            if os.getenv("RESET_DEMO_TENANT", "1") == "1":
+                await _session.execute(_text("""
+                    DELETE FROM salary_records
+                     WHERE employee_id IN (SELECT id FROM employees WHERE company_id = 1)
+                """))
+                await _session.execute(_text("""
+                    DELETE FROM attendance
+                     WHERE company_id = 1
+                """))
+                await _session.execute(_text("""
+                    DELETE FROM face_vectors
+                     WHERE employee_id IN (SELECT id FROM employees WHERE company_id = 1)
+                """))
+                await _session.execute(_text("""
+                    DELETE FROM employees WHERE company_id = 1
+                """))
+                await _session.execute(_text("""
+                    DELETE FROM monthly_working_days WHERE company_id = 1
+                """))
+                await _session.execute(_text("""
+                    DELETE FROM settings WHERE company_id = 1
+                """))
+                await _session.execute(_text("""
+                    DELETE FROM admins   WHERE company_id = 1
+                """))
+                await _session.execute(_text("""
+                    DELETE FROM companies WHERE id = 1 AND company_code = 'GARAGE2024'
+                """))
             await _session.commit()
         logger.info("✅ DB migration complete")
     except Exception as _e:

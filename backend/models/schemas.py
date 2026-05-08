@@ -8,7 +8,6 @@ from decimal import Decimal
 # AUTH
 # ─────────────────────────────────────────
 class LoginRequest(BaseModel):
-    company_code: str
     email: EmailStr
     password: str
 
@@ -17,6 +16,48 @@ class LoginResponse(BaseModel):
     admin_name: str
     company_name: str
     company_id: int
+    company_code: str
+    plan: str
+
+
+class SignupRequest(BaseModel):
+    business_name: str          # e.g. "Mehta Auto Garage"
+    company_code: str           # user-chosen, must be unique (e.g. "MEHTA-AUTO")
+    owner_name: str
+    email: EmailStr
+    phone: str
+    password: str
+
+    @field_validator("company_code")
+    @classmethod
+    def normalise_code(cls, v: str) -> str:
+        v = v.strip().upper()
+        if len(v) < 4 or len(v) > 20:
+            raise ValueError("company_code must be 4-20 characters")
+        if not all(c.isalnum() or c in "-_" for c in v):
+            raise ValueError("company_code may only contain letters, digits, '-' and '_'")
+        return v
+
+    @field_validator("password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("password must be at least 8 characters")
+        return v
+
+
+class SignupResponse(BaseModel):
+    token: str
+    admin_name: str
+    company_name: str
+    company_id: int
+    company_code: str
+    plan: str
+
+
+class CheckCompanyCodeResponse(BaseModel):
+    available: bool
+    company_code: str
 
 
 # ─────────────────────────────────────────

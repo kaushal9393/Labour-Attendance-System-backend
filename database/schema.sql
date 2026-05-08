@@ -10,10 +10,13 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- TABLE 1: companies
 -- ============================================================
 CREATE TABLE IF NOT EXISTS companies (
-    id          SERIAL PRIMARY KEY,
-    name        VARCHAR(100) NOT NULL,
-    company_code VARCHAR(20) UNIQUE NOT NULL,  -- login code e.g. 'GARAGE2024'
-    created_at  TIMESTAMP DEFAULT NOW()
+    id           SERIAL PRIMARY KEY,
+    name         VARCHAR(100) NOT NULL,
+    company_code VARCHAR(20) UNIQUE NOT NULL,  -- user-chosen, used in kiosk URL
+    owner_phone  VARCHAR(20),
+    plan         VARCHAR(20) DEFAULT 'free',   -- free / basic / premium
+    status       VARCHAR(20) DEFAULT 'active', -- active / suspended
+    created_at   TIMESTAMP DEFAULT NOW()
 );
 
 -- ============================================================
@@ -155,25 +158,8 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ============================================================
--- SEED DATA (testing — change password_hash before production)
--- bcrypt hash below = "Admin@1234"
+-- NO SEED DATA — multi-tenant SaaS, every company is created via signup.
 -- ============================================================
-INSERT INTO companies (name, company_code)
-VALUES ('Test Garage', 'GARAGE2024')
-ON CONFLICT (company_code) DO NOTHING;
-
-INSERT INTO admins (company_id, name, email, password_hash)
-VALUES (
-    1,
-    'Garage Owner',
-    'owner@garage.com',
-    '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4J/HS.0XY2'
-)
-ON CONFLICT (email) DO NOTHING;
-
-INSERT INTO settings (company_id)
-VALUES (1)
-ON CONFLICT (company_id) DO NOTHING;
 
 -- ============================================================
 -- CONNECTION STRING FORMAT FOR PYTHON ASYNCPG

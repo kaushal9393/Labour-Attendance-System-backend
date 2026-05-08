@@ -1,13 +1,15 @@
 class AppConstants {
   static const String baseUrl = 'https://labour-attendance-system-backend-production.up.railway.app/api';
   static const String livenessUrl = 'https://labour-attendance-system-backend-production.up.railway.app/liveness/';
-  static const String companyCode = 'GARAGE2024';
 
   // Shared preference keys
-  static const String keyToken     = 'jwt_token';
-  static const String keyMode      = 'app_mode';   // 'kiosk' | 'admin'
-  static const String keyCompanyId = 'company_id';
-  static const String keyAdminName = 'admin_name';
+  static const String keyToken       = 'jwt_token';
+  static const String keyMode        = 'app_mode';     // 'kiosk' | 'admin'
+  static const String keyCompanyId   = 'company_id';
+  static const String keyCompanyCode = 'company_code'; // set on login/signup
+  static const String keyCompanyName = 'company_name';
+  static const String keyAdminName   = 'admin_name';
+  static const String keyPlan        = 'plan';
 
   // App modes
   static const String modeKiosk = 'kiosk';

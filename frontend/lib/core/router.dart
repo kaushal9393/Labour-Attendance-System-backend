@@ -14,6 +14,7 @@ import '../screens/kiosk/admin_panel_screen.dart';
 import '../screens/kiosk/employee_registration_screen.dart';
 import '../screens/kiosk/outside_window_screen.dart';
 import '../screens/admin/login_screen.dart';
+import '../screens/admin/signup_screen.dart';
 import '../screens/admin/pin_login_screen.dart';
 import '../screens/admin/dashboard_screen.dart';
 import '../screens/admin/employee_list_screen.dart';
@@ -35,8 +36,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       final token = prefs.getString(AppConstants.keyToken);
       final mode  = prefs.getString(AppConstants.keyMode);
 
-      final isAuthRoute = state.matchedLocation == '/admin/login' ||
-                          state.matchedLocation == '/admin/pin'  ||
+      final isAuthRoute = state.matchedLocation == '/admin/login'  ||
+                          state.matchedLocation == '/admin/signup' ||
+                          state.matchedLocation == '/admin/pin'    ||
                           state.matchedLocation == '/mode-select';
 
       if (mode == AppConstants.modeKiosk &&
@@ -83,6 +85,7 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // ── Admin ───────────────────────────────────────────────
       GoRoute(path: '/admin/login',     builder: (_, __) => const LoginScreen()),
+      GoRoute(path: '/admin/signup',    builder: (_, __) => const SignupScreen()),
       GoRoute(path: '/admin/pin',       builder: (_, __) => const PinLoginScreen()),
       GoRoute(path: '/admin/register',  builder: (_, __) => const EmployeeRegistrationScreen(fromAdmin: true)),
       GoRoute(

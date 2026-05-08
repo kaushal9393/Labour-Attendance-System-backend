@@ -14,18 +14,16 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
-  final _formKey     = GlobalKey<FormState>();
-  final _companyCtrl = TextEditingController();
-  final _emailCtrl   = TextEditingController();
-  final _passCtrl    = TextEditingController();
+  final _formKey   = GlobalKey<FormState>();
+  final _emailCtrl = TextEditingController();
+  final _passCtrl  = TextEditingController();
   bool  _obscure             = true;
   bool  _rememberMe          = false;
   bool  _hasSavedCredentials = false;
 
-  static const String _kCompany = 'saved_company_code';
-  static const String _kEmail   = 'saved_email';
-  static const String _kPass    = 'saved_password';
-  static const String _kPin     = 'admin_pin';
+  static const String _kEmail = 'saved_email';
+  static const String _kPass  = 'saved_password';
+  static const String _kPin   = 'admin_pin';
 
   @override
   void initState() {
@@ -35,21 +33,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   Future<void> _checkPinOrLoad() async {
     final prefs = await SharedPreferences.getInstance();
-    final pin     = prefs.getString(_kPin);
-    final company = prefs.getString(_kCompany);
-    final email   = prefs.getString(_kEmail);
-    final pass    = prefs.getString(_kPass);
+    final pin   = prefs.getString(_kPin);
+    final email = prefs.getString(_kEmail);
+    final pass  = prefs.getString(_kPass);
 
     // If PIN + credentials saved → go to PIN screen
-    if (pin != null && company != null && email != null && pass != null) {
+    if (pin != null && email != null && pass != null) {
       if (mounted) context.go('/admin/pin');
       return;
     }
 
-    // Otherwise load saved credentials if any
-    if (company != null && email != null && pass != null) {
+    if (email != null && pass != null) {
       setState(() {
-        _companyCtrl.text    = company;
         _emailCtrl.text      = email;
         _passCtrl.text       = pass;
         _rememberMe          = true;
@@ -60,12 +55,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   Future<void> _clearSavedCredentials() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_kCompany);
     await prefs.remove(_kEmail);
     await prefs.remove(_kPass);
     await prefs.remove(_kPin);
     setState(() {
-      _companyCtrl.clear();
       _emailCtrl.clear();
       _passCtrl.clear();
       _rememberMe          = false;
@@ -75,7 +68,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   @override
   void dispose() {
-    _companyCtrl.dispose();
     _emailCtrl.dispose();
     _passCtrl.dispose();
     super.dispose();
@@ -84,21 +76,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
     final success = await ref.read(authProvider.notifier).login(
-      companyCode: _companyCtrl.text.trim(),
-      email:       _emailCtrl.text.trim(),
-      password:    _passCtrl.text,
+      email:    _emailCtrl.text.trim(),
+      password: _passCtrl.text,
     );
     if (!mounted) return;
     if (success) {
       final prefs = await SharedPreferences.getInstance();
       if (_rememberMe) {
-        await prefs.setString(_kCompany, _companyCtrl.text.trim());
-        await prefs.setString(_kEmail,   _emailCtrl.text.trim());
-        await prefs.setString(_kPass,    _passCtrl.text);
-        // Show PIN setup dialog after successful login
+        await prefs.setString(_kEmail, _emailCtrl.text.trim());
+        await prefs.setString(_kPass,  _passCtrl.text);
         if (mounted) _showPinSetupDialog(prefs);
       } else {
-        await prefs.remove(_kCompany);
         await prefs.remove(_kEmail);
         await prefs.remove(_kPass);
         await prefs.remove(_kPin);
@@ -180,18 +168,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 child: Form(
                   key: _formKey,
                   child: Column(children: [
-                    TextFormField(
-                      controller: _companyCtrl,
-                      textCapitalization: TextCapitalization.characters,
-                      style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w500),
-                      decoration: const InputDecoration(
-                        labelText: 'Company Code',
-                        hintText: 'e.g. GARAGE2024',
-                        prefixIcon: Icon(Icons.business_outlined),
-                      ),
-                      validator: (v) => v == null || v.isEmpty ? 'Enter company code' : null,
-                    ),
-                    const SizedBox(height: 14),
                     TextFormField(
                       controller: _emailCtrl,
                       keyboardType: TextInputType.emailAddress,
@@ -285,7 +261,30 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
               ),
 
-              const SizedBox(height: 20),
+              const SizedBox(height: 18),
+              Center(
+                child: Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    const Text("Don't have an account? ",
+                        style: TextStyle(
+                            color: AppTheme.textSecondary, fontSize: 13)),
+                    TextButton(
+                      onPressed: () => context.go('/admin/signup'),
+                      style: TextButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          minimumSize: const Size(0, 32)),
+                      child: const Text('Create one',
+                          style: TextStyle(
+                              color: AppTheme.accent,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700)),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 6),
               Center(
                 child: TextButton(
                   onPressed: () => context.go('/mode-select'),

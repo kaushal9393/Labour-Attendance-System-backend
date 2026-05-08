@@ -84,6 +84,12 @@ class ApiService {
   Future<Response> login(Map<String, dynamic> body) =>
       _dio.post('/auth/login', data: body);
 
+  Future<Response> signup(Map<String, dynamic> body) =>
+      _dio.post('/auth/signup', data: body);
+
+  Future<Response> checkCompanyCode(String code) =>
+      _dio.get('/auth/check-code', queryParameters: {'code': code});
+
   // ── Employees ───────────────────────────────────────────────
   Future<Response> getEmployees() => _dio.get('/employees');
 

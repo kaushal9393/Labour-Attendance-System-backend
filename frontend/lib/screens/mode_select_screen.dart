@@ -17,6 +17,19 @@ class _ModeSelectScreenState extends State<ModeSelectScreen> {
 
   Future<void> _selectMode(BuildContext context, String mode) async {
     final prefs = await SharedPreferences.getInstance();
+
+    // Kiosk mode needs a company_code that's only available after the
+    // owner has signed up / logged in once. Block kiosk selection until
+    // setup is complete and route them through admin first.
+    if (mode == AppConstants.modeKiosk) {
+      final code = prefs.getString(AppConstants.keyCompanyCode);
+      if (code == null || code.isEmpty) {
+        if (!context.mounted) return;
+        _showSetupRequiredDialog(context);
+        return;
+      }
+    }
+
     await prefs.setString(AppConstants.keyMode, mode);
     if (!context.mounted) return;
     if (mode == AppConstants.modeKiosk) {
@@ -24,6 +37,40 @@ class _ModeSelectScreenState extends State<ModeSelectScreen> {
     } else {
       context.go('/admin/login');
     }
+  }
+
+  void _showSetupRequiredDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppTheme.cardBg,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20)),
+        title: const Text('Setup zaroori hai',
+            style: TextStyle(
+                color: AppTheme.textPrimary, fontWeight: FontWeight.w700)),
+        content: const Text(
+          'Kiosk mode use karne se pehle owner ko sign up ya login '
+          'karna hoga. Pehli baar setup karne ke liye Owner / Admin '
+          'option chuno.',
+          style: TextStyle(color: AppTheme.textSecondary, fontSize: 14, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel',
+                style: TextStyle(color: AppTheme.textSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              context.go('/admin/login');
+            },
+            child: const Text('Owner Login'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override

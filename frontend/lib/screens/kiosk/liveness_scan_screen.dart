@@ -45,6 +45,16 @@ class _LivenessScanScreenState extends State<LivenessScanScreen>
   }
 
   Future<void> _bootstrap() async {
+    // 0. Resolve the company_code that was saved at login/signup time. The
+    //    kiosk uses this in the liveness URL — without it, the backend can't
+    //    figure out which company's collection to match against.
+    final prefs = await SharedPreferences.getInstance();
+    final companyCode = prefs.getString(AppConstants.keyCompanyCode);
+    if (companyCode == null || companyCode.isEmpty) {
+      _failWithReason('no_company_code');
+      return;
+    }
+
     // 1. Reserve a scan_id we can poll on. The web page reads it from the
     //    URL query string and includes it on /verify so the result lands in
     //    the same bucket we're watching.
@@ -62,7 +72,7 @@ class _LivenessScanScreenState extends State<LivenessScanScreen>
     //    along on /verify and we can poll on the same key.
     final cacheBust = DateTime.now().millisecondsSinceEpoch;
     final url =
-        '${AppConstants.livenessUrl}?company_code=${AppConstants.companyCode}&scan_id=$scanId&t=$cacheBust';
+        '${AppConstants.livenessUrl}?company_code=$companyCode&scan_id=$scanId&t=$cacheBust';
 
     try {
       // launchUrl returns when the user dismisses the Custom Tab — don't await

@@ -13,10 +13,9 @@ class PinLoginScreen extends ConsumerStatefulWidget {
 }
 
 class _PinLoginScreenState extends ConsumerState<PinLoginScreen> {
-  static const _kPin     = 'admin_pin';
-  static const _kCompany = 'saved_company_code';
-  static const _kEmail   = 'saved_email';
-  static const _kPass    = 'saved_password';
+  static const _kPin   = 'admin_pin';
+  static const _kEmail = 'saved_email';
+  static const _kPass  = 'saved_password';
 
   String _entered = '';
   String _error   = '';
@@ -44,14 +43,12 @@ class _PinLoginScreenState extends ConsumerState<PinLoginScreen> {
     }
 
     // PIN correct — auto-login with saved credentials
-    final company = prefs.getString(_kCompany) ?? '';
-    final email   = prefs.getString(_kEmail)   ?? '';
-    final pass    = prefs.getString(_kPass)    ?? '';
+    final email = prefs.getString(_kEmail) ?? '';
+    final pass  = prefs.getString(_kPass)  ?? '';
 
     final success = await ref.read(authProvider.notifier).login(
-      companyCode: company,
-      email:       email,
-      password:    pass,
+      email:    email,
+      password: pass,
     );
 
     if (!mounted) return;

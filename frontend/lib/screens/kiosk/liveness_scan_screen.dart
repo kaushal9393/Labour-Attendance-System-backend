@@ -19,7 +19,8 @@ class LivenessScanScreen extends StatefulWidget {
   State<LivenessScanScreen> createState() => _LivenessScanScreenState();
 }
 
-class _LivenessScanScreenState extends State<LivenessScanScreen> {
+class _LivenessScanScreenState extends State<LivenessScanScreen>
+    with WidgetsBindingObserver {
   Timer? _pollTimer;
   bool _resultHandled = false;
   bool _launching = true;
@@ -28,7 +29,19 @@ class _LivenessScanScreenState extends State<LivenessScanScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _bootstrap();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // When the user returns to the app from the browser tab, immediately
+    // hit /result instead of waiting for the next 1.5s tick. Android often
+    // throttles timers while the app is in the background, so the periodic
+    // poll alone isn't reliable.
+    if (state == AppLifecycleState.resumed && _scanId != null) {
+      _pollResult();
+    }
   }
 
   Future<void> _bootstrap() async {
@@ -130,6 +143,7 @@ class _LivenessScanScreenState extends State<LivenessScanScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pollTimer?.cancel();
     super.dispose();
   }

@@ -82,13 +82,29 @@ export default function App() {
       .then((r) => r.json())
       .then((data) => {
         setResult(data);
-        setPhase("done");
         postToHost(data);
+        // Stay on the "Verifying…" view — the Flutter app polls
+        // /api/liveness/result/{scan_id} and shows the canonical
+        // success/failed screen. Try to close the tab so the user
+        // returns to the app immediately. window.close() only works
+        // for tabs the page itself opened, so we also navigate to
+        // about:blank as a graceful fallback (browsers won't auto-
+        // close Custom Tabs from arbitrary pages).
+        setTimeout(() => {
+          try {
+            window.close();
+          } catch (_) { /* ignore */ }
+          window.location.replace("about:blank");
+        }, 200);
       })
       .catch((e) => {
         setPhase("error");
         setErrorMsg(`Verification failed: ${e.message}`);
         postToHost({ success: false, reason: "network_error" });
+        setTimeout(() => {
+          try { window.close(); } catch (_) { /* ignore */ }
+          window.location.replace("about:blank");
+        }, 200);
       });
   }
 

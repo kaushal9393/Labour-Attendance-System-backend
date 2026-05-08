@@ -36,11 +36,21 @@ export default function App() {
 
   function postToHost(payload: any) {
     const msg = JSON.stringify(payload);
+    console.log("[Liveness->Host]", msg);
+    // Primary path (Custom Tabs): redirect to a deep link the Flutter app
+    // is registered to handle. The OS closes the Custom Tab and dispatches
+    // the URL to the app via app_links.
+    const deepLink = `garage://liveness-done?data=${encodeURIComponent(msg)}`;
+    // Fallback for plain browser testing — keep the JS bridge so the
+    // page is still usable when opened in Chrome directly.
     const w = window as any;
     if (w.FlutterLiveness && typeof w.FlutterLiveness.postMessage === "function") {
       w.FlutterLiveness.postMessage(msg);
     }
-    console.log("[Liveness->Host]", msg);
+    // Use a tiny delay so the result UI flashes briefly before the tab closes.
+    setTimeout(() => {
+      window.location.href = deepLink;
+    }, 600);
   }
 
   useEffect(() => {

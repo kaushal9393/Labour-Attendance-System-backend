@@ -31,10 +31,11 @@ dependencies:
   # On-device face detection (ML Kit) — crops face before sending to server
   google_mlkit_face_detection: ^0.11.0
 
-  # WebView for AWS Face Liveness flow (anti-spoofing).
-  # flutter_inappwebview is used (not webview_flutter) because it has robust
-  # getUserMedia + WebSocket support needed for AWS Amplify Liveness.
-  flutter_inappwebview: ^6.1.5
+  # AWS Face Liveness page is opened in a Chrome Custom Tab (real Chrome
+  # engine, runs in-app, full getUserMedia + WebSocket support). The result
+  # is delivered back to the app via the garage:// deep link below.
+  flutter_custom_tabs: ^2.1.0
+  app_links: ^6.3.2
 
   # Firebase
   firebase_core: ^3.15.0

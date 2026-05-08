@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
-import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_custom_tabs/flutter_custom_tabs.dart';
@@ -9,10 +7,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants.dart';
 import '../../core/theme.dart';
+import '../../services/api_service.dart';
 
-/// Opens the AWS Face Liveness flow in a Chrome Custom Tab (real Chrome
-/// engine, runs in-app) and waits for the result to come back via the
-/// garage://liveness-done deep link the React page redirects to.
+/// Opens the AWS Face Liveness flow in a Chrome Custom Tab and polls the
+/// backend for the result. Polling is used (not deep links) because Android
+/// won't reliably dispatch a custom-scheme URL back to a foreground app.
 class LivenessScanScreen extends StatefulWidget {
   const LivenessScanScreen({super.key});
 
@@ -21,25 +20,42 @@ class LivenessScanScreen extends StatefulWidget {
 }
 
 class _LivenessScanScreenState extends State<LivenessScanScreen> {
-  final _appLinks = AppLinks();
-  StreamSubscription<Uri>? _linkSub;
+  Timer? _pollTimer;
   bool _resultHandled = false;
   bool _launching = true;
+  String? _scanId;
 
   @override
   void initState() {
     super.initState();
-    _linkSub = _appLinks.uriLinkStream.listen(_onDeepLink, onError: (_) {});
     _bootstrap();
   }
 
   Future<void> _bootstrap() async {
+    // 1. Reserve a scan_id we can poll on. The web page reads it from the
+    //    URL query string and includes it on /verify so the result lands in
+    //    the same bucket we're watching.
+    final String scanId;
+    try {
+      final resp = await ApiService().reserveScanId();
+      scanId = resp.data['scan_id'] as String;
+    } catch (_) {
+      _failWithReason('cant_start_session');
+      return;
+    }
+    _scanId = scanId;
+
+    // 2. Open the Custom Tab with the scan_id so the React page can pass it
+    //    along on /verify and we can poll on the same key.
     final cacheBust = DateTime.now().millisecondsSinceEpoch;
     final url =
-        '${AppConstants.livenessUrl}?company_code=${AppConstants.companyCode}&t=$cacheBust';
+        '${AppConstants.livenessUrl}?company_code=${AppConstants.companyCode}&scan_id=$scanId&t=$cacheBust';
 
     try {
-      await launchUrl(
+      // launchUrl returns when the user dismisses the Custom Tab — don't await
+      // it (we'd block polling). Fire-and-forget is the documented pattern.
+      // ignore: unawaited_futures
+      launchUrl(
         Uri.parse(url),
         customTabsOptions: CustomTabsOptions(
           colorSchemes: CustomTabsColorSchemes.defaults(
@@ -53,36 +69,42 @@ class _LivenessScanScreenState extends State<LivenessScanScreen> {
           ),
         ),
       );
-    } catch (e) {
+    } catch (_) {
       _failWithReason('cant_open_browser');
       return;
     }
 
     if (mounted) setState(() => _launching = false);
+
+    // 3. Start polling. The first hit usually returns 204 (not ready).
+    _pollTimer = Timer.periodic(
+      const Duration(milliseconds: 1500),
+      (_) => _pollResult(),
+    );
   }
 
-  void _onDeepLink(Uri uri) {
-    if (_resultHandled) return;
-    if (uri.scheme != 'garage' || uri.host != 'liveness-done') return;
-    _resultHandled = true;
-
-    // Close the Chrome Custom Tab so the user lands back on this screen
-    // before we route to success/failed.
-    closeCustomTabs().catchError((_) {});
-
-    final raw = uri.queryParameters['data'];
-    if (raw == null) {
-      _failWithReason('missing_data');
-      return;
-    }
-
-    Map<String, dynamic> data;
+  Future<void> _pollResult() async {
+    if (_resultHandled || _scanId == null) return;
     try {
-      data = jsonDecode(raw) as Map<String, dynamic>;
+      final resp = await ApiService().getLivenessResult(_scanId!);
+      if (resp.statusCode == 204 || resp.data == null || resp.data == '') {
+        return; // not ready yet
+      }
+      if (resp.statusCode != 200) return;
+      final data = (resp.data as Map).cast<String, dynamic>();
+      _handleResult(data);
     } catch (_) {
-      _failWithReason('bad_data');
-      return;
+      // Network blip — keep polling.
     }
+  }
+
+  void _handleResult(Map<String, dynamic> data) {
+    if (_resultHandled) return;
+    _resultHandled = true;
+    _pollTimer?.cancel();
+
+    // Bring the user back to the app from the Custom Tab.
+    closeCustomTabs().catchError((_) {});
 
     HapticFeedback.mediumImpact();
     if (!mounted) return;
@@ -101,13 +123,14 @@ class _LivenessScanScreenState extends State<LivenessScanScreen> {
   void _failWithReason(String _) {
     if (_resultHandled) return;
     _resultHandled = true;
+    _pollTimer?.cancel();
     if (!mounted) return;
     context.go('/kiosk/failed');
   }
 
   @override
   void dispose() {
-    _linkSub?.cancel();
+    _pollTimer?.cancel();
     super.dispose();
   }
 

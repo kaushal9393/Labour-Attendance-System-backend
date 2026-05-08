@@ -9,6 +9,8 @@ Flow:
 """
 import logging
 import json as _json
+import secrets
+import time as _time
 from datetime import datetime, timedelta, timezone, date
 
 from fastapi import APIRouter, HTTPException
@@ -34,14 +36,32 @@ import os
 # via LIVENESS_MIN_CONFIDENCE env var if needed.
 LIVENESS_MIN_CONFIDENCE = float(os.getenv("LIVENESS_MIN_CONFIDENCE", "70"))
 
+# In-memory result store keyed by scan_id. Each entry is (result_dict, expires_at).
+# Mobile clients poll /result/{scan_id} since Android Custom Tabs don't reliably
+# dispatch deep links back to a foreground app. TTL keeps the dict bounded.
+_SCAN_RESULTS: dict[str, tuple[dict, float]] = {}
+_SCAN_TTL_SECONDS = 300
+
+
+def _gc_scans() -> None:
+    now = _time.time()
+    expired = [k for k, (_v, exp) in _SCAN_RESULTS.items() if exp < now]
+    for k in expired:
+        _SCAN_RESULTS.pop(k, None)
+
 
 class CreateSessionResponse(BaseModel):
     session_id: str
 
 
+class CreateScanIdResponse(BaseModel):
+    scan_id: str
+
+
 class VerifyRequest(BaseModel):
     session_id: str
     company_code: str
+    scan_id: str | None = None
 
 
 class VerifyResponse(BaseModel):
@@ -65,12 +85,42 @@ async def create_session():
     return CreateSessionResponse(session_id=sid)
 
 
+@router.post("/scan-id", response_model=CreateScanIdResponse)
+async def reserve_scan_id():
+    """Mobile pre-allocates a scan_id, then opens the Custom Tab with it.
+    The web page reads scan_id from the URL and includes it on /verify."""
+    _gc_scans()
+    return CreateScanIdResponse(scan_id=secrets.token_urlsafe(16))
+
+
+@router.get("/result/{scan_id}")
+async def get_scan_result(scan_id: str):
+    """Polled by the mobile app while the user runs the liveness check in a
+    Custom Tab. Returns 204 until the result is available."""
+    entry = _SCAN_RESULTS.get(scan_id)
+    if entry is None:
+        from fastapi import Response
+        return Response(status_code=204)
+    result, _exp = entry
+    return result
+
+
 @router.post("/verify", response_model=VerifyResponse)
 async def verify_and_scan(payload: VerifyRequest):
     """
     Pull liveness results from AWS, then run face match + mark attendance.
     Replaces the old /api/attendance/scan flow when liveness is enabled.
     """
+    response = await _verify_impl(payload)
+    if payload.scan_id:
+        _SCAN_RESULTS[payload.scan_id] = (
+            response.model_dump(),
+            _time.time() + _SCAN_TTL_SECONDS,
+        )
+    return response
+
+
+async def _verify_impl(payload: VerifyRequest) -> VerifyResponse:
     # 1. Fetch liveness result
     try:
         result = get_liveness_result(payload.session_id)

@@ -20,8 +20,11 @@ Amplify.configure({
 
 // API base — empty string means same origin (FastAPI serves both API + static).
 const API_BASE = "";
-const COMPANY_CODE =
-  new URLSearchParams(window.location.search).get("company_code") || "";
+const URL_PARAMS = new URLSearchParams(window.location.search);
+const COMPANY_CODE = URL_PARAMS.get("company_code") || "";
+// Mobile pre-allocates a scan_id and passes it on the URL so polling
+// from the app and the result POST land in the same bucket.
+const SCAN_ID = URL_PARAMS.get("scan_id");
 
 type Phase = "loading" | "ready" | "verifying" | "done" | "error";
 
@@ -30,21 +33,17 @@ export default function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [result, setResult] = useState<any>(null);
-  // Guard against duplicate session creation under React StrictMode and
-  // Flutter WebView's tendency to fire onLoadStop multiple times.
   const sessionStartedRef = useRef(false);
 
+  // Kept only so the page is still usable when opened in a desktop browser
+  // for testing — the mobile app doesn't read this anymore.
   function postToHost(payload: any) {
     const msg = JSON.stringify(payload);
     console.log("[Liveness->Host]", msg);
-    const deepLink = `garage://liveness-done?data=${encodeURIComponent(msg)}`;
     const w = window as any;
     if (w.FlutterLiveness && typeof w.FlutterLiveness.postMessage === "function") {
       w.FlutterLiveness.postMessage(msg);
     }
-    // Fire the deep link immediately — Flutter shows the success/failed
-    // screen so there's no need to flash a result page in the Custom Tab.
-    window.location.href = deepLink;
   }
 
   useEffect(() => {
@@ -74,7 +73,11 @@ export default function App() {
     fetch(`${API_BASE}/api/liveness/verify`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionId, company_code: COMPANY_CODE }),
+      body: JSON.stringify({
+        session_id: sessionId,
+        company_code: COMPANY_CODE,
+        scan_id: SCAN_ID,
+      }),
     })
       .then((r) => r.json())
       .then((data) => {

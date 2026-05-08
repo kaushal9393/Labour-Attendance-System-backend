@@ -117,6 +117,17 @@ class ApiService {
       _dio.post('/attendance/scan',
           data: {'image': base64Image, 'company_code': companyCode});
 
+  // ── Liveness ────────────────────────────────────────────────
+  Future<Response> reserveScanId() => _dio.post('/liveness/scan-id');
+
+  Future<Response> getLivenessResult(String scanId) =>
+      _dio.get('/liveness/result/$scanId',
+          options: Options(
+            // 204 = result not ready yet — treat as a normal response
+            // instead of an exception.
+            validateStatus: (s) => s != null && s < 500,
+          ));
+
   Future<Response> getTodayAttendance() => _dio.get('/attendance/today');
 
   Future<Response> manualCheckout({

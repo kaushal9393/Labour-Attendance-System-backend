@@ -37,20 +37,14 @@ export default function App() {
   function postToHost(payload: any) {
     const msg = JSON.stringify(payload);
     console.log("[Liveness->Host]", msg);
-    // Primary path (Custom Tabs): redirect to a deep link the Flutter app
-    // is registered to handle. The OS closes the Custom Tab and dispatches
-    // the URL to the app via app_links.
     const deepLink = `garage://liveness-done?data=${encodeURIComponent(msg)}`;
-    // Fallback for plain browser testing — keep the JS bridge so the
-    // page is still usable when opened in Chrome directly.
     const w = window as any;
     if (w.FlutterLiveness && typeof w.FlutterLiveness.postMessage === "function") {
       w.FlutterLiveness.postMessage(msg);
     }
-    // Use a tiny delay so the result UI flashes briefly before the tab closes.
-    setTimeout(() => {
-      window.location.href = deepLink;
-    }, 600);
+    // Fire the deep link immediately — Flutter shows the success/failed
+    // screen so there's no need to flash a result page in the Custom Tab.
+    window.location.href = deepLink;
   }
 
   useEffect(() => {
@@ -104,11 +98,24 @@ export default function App() {
   return (
     <ThemeProvider>
       <div style={styles.container}>
-        {phase === "loading" && <Centered text="Starting liveness check…" />}
-        {phase === "error" && (
-          <Centered text={`❌ ${errorMsg}`} subtext="Please retry from the app." />
+        {phase === "loading" && (
+          <Centered
+            text="Starting face scan…"
+            subtext="Camera permission ko Allow karein."
+          />
         )}
-        {phase === "verifying" && <Centered text="Verifying…" />}
+        {phase === "error" && (
+          <Centered
+            text={`❌ ${errorMsg}`}
+            subtext="App pe vaapas jaakar dobara try karein."
+          />
+        )}
+        {phase === "verifying" && (
+          <Centered
+            text="Attendance mark ho rahi hai…"
+            subtext="Ek second ruko."
+          />
+        )}
         {phase === "done" && result && <ResultView result={result} />}
         {phase === "ready" && sessionId && (
           <FaceLivenessDetector
@@ -116,7 +123,9 @@ export default function App() {
             region={REGION}
             onAnalysisComplete={handleAnalysisComplete as any}
             onError={handleError}
-            disableStartScreen={false}
+            // Skip the AWS start screen — saves ~3 seconds and avoids the
+            // extra "Begin check" tap on every scan.
+            disableStartScreen={true}
           />
         )}
       </div>

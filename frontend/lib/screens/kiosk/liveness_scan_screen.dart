@@ -66,6 +66,10 @@ class _LivenessScanScreenState extends State<LivenessScanScreen> {
     if (uri.scheme != 'garage' || uri.host != 'liveness-done') return;
     _resultHandled = true;
 
+    // Close the Chrome Custom Tab so the user lands back on this screen
+    // before we route to success/failed.
+    closeCustomTabs().catchError((_) {});
+
     final raw = uri.queryParameters['data'];
     if (raw == null) {
       _failWithReason('missing_data');
@@ -114,50 +118,86 @@ class _LivenessScanScreenState extends State<LivenessScanScreen> {
       body: SafeArea(
         child: Stack(
           children: [
-            Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const CircularProgressIndicator(color: AppTheme.accent),
-                  const SizedBox(height: 24),
-                  Text(
-                    _launching
-                        ? 'Opening liveness scan…'
-                        : 'Complete the scan in the browser…',
-                    style: const TextStyle(
-                      color: AppTheme.textPrimary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 96,
+                      height: 96,
+                      decoration: BoxDecoration(
+                        color: AppTheme.accentLight,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: AppTheme.accent, width: 2),
+                      ),
+                      child: const Icon(Icons.face_retouching_natural,
+                          color: AppTheme.accent, size: 56),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 32),
-                    child: Text(
-                      'When you finish, this screen will continue automatically.',
+                    const SizedBox(height: 28),
+                    Text(
+                      _launching ? 'Camera khul raha hai…' : 'Face scan jaari hai',
+                      style: const TextStyle(
+                        color: AppTheme.textPrimary,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Apna chehra oval ke andar rakho.\n'
+                      'Screen pe rang flash honge — bilkul mat hilo.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: AppTheme.textSecondary,
-                        fontSize: 13,
+                        fontSize: 14,
+                        height: 1.5,
                       ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-            Positioned(
-              top: 8,
-              left: 8,
-              child: IconButton(
-                icon: const Icon(Icons.close, color: AppTheme.textPrimary),
-                onPressed: _exit,
+                    const SizedBox(height: 32),
+                    const SizedBox(
+                      width: 28,
+                      height: 28,
+                      child: CircularProgressIndicator(
+                        color: AppTheme.accent,
+                        strokeWidth: 3,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Scan complete hone par yahan automatic vaapas aa jaaoge',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 36),
+                    OutlinedButton.icon(
+                      onPressed: _exit,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppTheme.textSecondary,
+                        side: const BorderSide(color: AppTheme.divider),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 24, vertical: 12),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: const Icon(Icons.close, size: 18),
+                      label: const Text('Cancel'),
+                    ),
+                  ],
+                ),
               ),
             ),
             Positioned(
               top: 8,
               right: 8,
               child: IconButton(
-                icon: const Icon(Icons.settings, color: AppTheme.textSecondary),
+                icon: const Icon(Icons.settings,
+                    color: AppTheme.textSecondary),
                 onPressed: _showAdminDialog,
               ),
             ),

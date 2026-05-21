@@ -2,6 +2,7 @@ services:
   - type: web
     name: labour-Attendance-System
     runtime: python
+    rootDir: backend
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
@@ -9,3 +10,11 @@ services:
         sync: false
       - key: PYTHON_VERSION
         value: 3.11.9
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_REGION
+        value: ap-south-1
+      - key: AWS_FACE_SIMILARITY_THRESHOLD
+        value: "80"

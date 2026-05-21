@@ -18,6 +18,8 @@ from routers import auth, employees, attendance, salary, reports, settings as se
 
 load_dotenv()
 
+DATABASE_URL = os.getenv("DATABASE_URL")
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",

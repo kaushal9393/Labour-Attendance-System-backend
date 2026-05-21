@@ -486,7 +486,7 @@ class _EmployeeReportScreenState extends State<EmployeeReportScreen> {
     }
 
     try {
-      const channel = MethodChannel('com.example.garage_attendance/download');
+      const channel = MethodChannel('com.thinktankapps.garage_attendance/download');
       await channel.invokeMethod('saveToDownloads', {
         'bytes':    bytes,
         'fileName': _pdfFileName(),

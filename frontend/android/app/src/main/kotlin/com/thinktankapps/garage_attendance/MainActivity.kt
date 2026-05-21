@@ -1,4 +1,4 @@
-package com.example.garage_attendance
+package com.thinktankapps.garage_attendance
 
 import android.content.ContentValues
 import android.os.Build
@@ -12,7 +12,7 @@ import java.io.FileOutputStream
 
 class MainActivity : FlutterActivity() {
 
-    private val CHANNEL = "com.example.garage_attendance/download"
+    private val CHANNEL = "com.thinktankapps.garage_attendance/download"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -36,7 +36,6 @@ class MainActivity : FlutterActivity() {
 
     private fun saveToDownloads(bytes: ByteArray, fileName: String) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            // Android 10+ — use MediaStore (no permission needed)
             val values = ContentValues().apply {
                 put(MediaStore.Downloads.DISPLAY_NAME, fileName)
                 put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
@@ -51,7 +50,6 @@ class MainActivity : FlutterActivity() {
             values.put(MediaStore.Downloads.IS_PENDING, 0)
             resolver.update(uri, values, null, null)
         } else {
-            // Android 9 and below — write directly to Downloads dir
             val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
             dir.mkdirs()
             FileOutputStream(File(dir, fileName)).use { it.write(bytes) }

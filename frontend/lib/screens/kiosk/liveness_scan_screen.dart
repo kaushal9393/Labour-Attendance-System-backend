@@ -106,6 +106,11 @@ class _LivenessScanScreenState extends State<LivenessScanScreen>
       const Duration(milliseconds: 1500),
       (_) => _pollResult(),
     );
+
+    // 4. Safety timeout — if no result in 3 minutes, fail gracefully.
+    Future.delayed(const Duration(minutes: 3), () {
+      if (!_resultHandled) _failWithReason('cant_start_session');
+    });
   }
 
   Future<void> _pollResult() async {
@@ -141,16 +146,18 @@ class _LivenessScanScreenState extends State<LivenessScanScreen>
         'action':        data['action'],
       });
     } else {
-      context.go('/kiosk/failed');
+      context.go('/kiosk/failed', extra: {
+        'reason': data['reason'] ?? 'face_not_found',
+      });
     }
   }
 
-  void _failWithReason(String _) {
+  void _failWithReason(String reason) {
     if (_resultHandled) return;
     _resultHandled = true;
     _pollTimer?.cancel();
     if (!mounted) return;
-    context.go('/kiosk/failed');
+    context.go('/kiosk/failed', extra: {'reason': reason});
   }
 
   @override
@@ -286,7 +293,7 @@ class _LivenessScanScreenState extends State<LivenessScanScreen>
               Navigator.pop(context);
               final prefs = await SharedPreferences.getInstance();
               await prefs.remove(AppConstants.keyMode);
-              if (mounted) context.go('/mode-select');
+              if (mounted) context.go('/welcome');
             },
             child: const Text('Switch Mode'),
           ),

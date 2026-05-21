@@ -24,34 +24,53 @@ import '../screens/admin/salary_view_screen.dart';
 import '../screens/admin/notifications_screen.dart';
 import '../screens/admin/settings_screen.dart';
 import '../screens/admin/manual_checkout_screen.dart';
-import '../screens/mode_select_screen.dart';
+import '../screens/admin/privacy_policy_screen.dart';
+import '../screens/admin/terms_screen.dart';
+import '../screens/admin/help_screen.dart';
+import '../screens/welcome_screen.dart';
 import '../screens/employee_report_screen.dart';
 import '../models/employee.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
-    initialLocation: '/mode-select',
+    initialLocation: '/welcome',
     redirect: (context, state) async {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString(AppConstants.keyToken);
       final mode  = prefs.getString(AppConstants.keyMode);
 
-      final isAuthRoute = state.matchedLocation == '/admin/login'  ||
-                          state.matchedLocation == '/admin/signup' ||
-                          state.matchedLocation == '/admin/pin'    ||
-                          state.matchedLocation == '/mode-select';
+      final loc = state.matchedLocation;
 
-      if (mode == AppConstants.modeKiosk &&
-          !state.matchedLocation.startsWith('/kiosk')) {
+      final isPublicRoute = loc == '/welcome'        ||
+                            loc == '/admin/login'    ||
+                            loc == '/admin/signup'   ||
+                            loc == '/admin/pin'      ||
+                            loc == '/admin/privacy'  ||
+                            loc == '/admin/terms'    ||
+                            loc == '/admin/help';
+
+      // 1. Kiosk mode active → keep in kiosk flow
+      if (mode == AppConstants.modeKiosk && !loc.startsWith('/kiosk')) {
         return '/kiosk/splash';
       }
-      if (mode == AppConstants.modeAdmin && token == null && !isAuthRoute) {
+
+      // 2. Welcome screen always shows (user picks admin or kiosk each time)
+      // No redirect away from welcome needed.
+
+      // 3. Admin area without token → login (covers token expiry too)
+      if (loc.startsWith('/admin') && token == null && !isPublicRoute) {
         return '/admin/login';
       }
+
+      // 4. Logged-in admin on welcome → dashboard
+      if (loc == '/welcome' && token != null) {
+        return null; // let welcome show — user picks mode each time
+      }
+
       return null;
     },
     routes: [
-      GoRoute(path: '/mode-select', builder: (_, __) => const ModeSelectScreen()),
+      GoRoute(path: '/welcome', builder: (_, __) => const WelcomeScreen()),
 
       // ── Kiosk ──────────────────────────────────────────────
       GoRoute(path: '/kiosk/splash',    builder: (_, __) => const SplashScreen()),
@@ -67,7 +86,13 @@ final routerProvider = Provider<GoRouter>((ref) {
           );
         },
       ),
-      GoRoute(path: '/kiosk/failed',    builder: (_, __) => const FailedScreen()),
+      GoRoute(
+        path: '/kiosk/failed',
+        builder: (_, state) {
+          final extra = state.extra as Map<String, dynamic>? ?? {};
+          return FailedScreen(reason: extra['reason'] as String? ?? 'face_not_found');
+        },
+      ),
       GoRoute(
         path: '/kiosk/outside-window',
         builder: (_, state) {
@@ -108,6 +133,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/admin/manual-checkout',    builder: (_, __) => const ManualCheckoutScreen()),
         ],
       ),
+
+      GoRoute(path: '/admin/privacy',  builder: (_, __) => const PrivacyPolicyScreen()),
+      GoRoute(path: '/admin/terms',    builder: (_, __) => const TermsScreen()),
+      GoRoute(path: '/admin/help',     builder: (_, __) => const HelpScreen()),
     ],
   );
 });
@@ -161,10 +190,22 @@ class _AdminShellState extends State<AdminShell> {
     return true;
   }
 
+  static const _icons = [
+    Icons.dashboard_rounded,
+    Icons.people_rounded,
+    Icons.calendar_month_rounded,
+    Icons.payments_rounded,
+    Icons.settings_rounded,
+  ];
+  static const _labels = [
+    'Dashboard', 'Employees', 'Attendance', 'Salary', 'Settings',
+  ];
+
   @override
   Widget build(BuildContext context) {
     final location = GoRouterState.of(context).matchedLocation;
     final currentIndex = _indexFromLocation(location);
+    final isTablet = MediaQuery.sizeOf(context).width >= 600;
 
     return PopScope(
       canPop: false,
@@ -175,24 +216,58 @@ class _AdminShellState extends State<AdminShell> {
           SystemNavigator.pop();
         }
       },
-      child: Scaffold(
-        body: widget.child,
-        bottomNavigationBar: BottomNavigationBar(
-          currentIndex: currentIndex,
-          type: BottomNavigationBarType.fixed,
-          backgroundColor: AppTheme.surface,
-          selectedItemColor: AppTheme.accent,
-          unselectedItemColor: AppTheme.textSecondary,
-          onTap: (i) => context.go(_routes[i]),
-          items: const [
-            BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Dashboard'),
-            BottomNavigationBarItem(icon: Icon(Icons.people),    label: 'Employees'),
-            BottomNavigationBarItem(icon: Icon(Icons.calendar_month), label: 'Attendance'),
-            BottomNavigationBarItem(icon: Icon(Icons.payments),  label: 'Salary'),
-            BottomNavigationBarItem(icon: Icon(Icons.settings),  label: 'Settings'),
-          ],
-        ),
-      ),
+      child: isTablet
+          ? Scaffold(
+              body: Row(children: [
+                NavigationRail(
+                  backgroundColor: AppTheme.surface,
+                  selectedIndex: currentIndex,
+                  onDestinationSelected: (i) => context.go(_routes[i]),
+                  extended: MediaQuery.sizeOf(context).width >= 900,
+                  minWidth: 72,
+                  minExtendedWidth: 180,
+                  selectedIconTheme:
+                      const IconThemeData(color: AppTheme.accent, size: 26),
+                  unselectedIconTheme: const IconThemeData(
+                      color: AppTheme.textSecondary, size: 24),
+                  selectedLabelTextStyle: const TextStyle(
+                      color: AppTheme.accent,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13),
+                  unselectedLabelTextStyle: const TextStyle(
+                      color: AppTheme.textSecondary, fontSize: 13),
+                  useIndicator: true,
+                  indicatorColor: AppTheme.accentLight,
+                  destinations: List.generate(
+                    _labels.length,
+                    (i) => NavigationRailDestination(
+                      icon: Icon(_icons[i]),
+                      label: Text(_labels[i]),
+                    ),
+                  ),
+                ),
+                const VerticalDivider(width: 1, thickness: 1),
+                Expanded(child: widget.child),
+              ]),
+            )
+          : Scaffold(
+              body: widget.child,
+              bottomNavigationBar: BottomNavigationBar(
+                currentIndex: currentIndex,
+                type: BottomNavigationBarType.fixed,
+                backgroundColor: AppTheme.surface,
+                selectedItemColor: AppTheme.accent,
+                unselectedItemColor: AppTheme.textSecondary,
+                onTap: (i) => context.go(_routes[i]),
+                items: List.generate(
+                  _labels.length,
+                  (i) => BottomNavigationBarItem(
+                    icon: Icon(_icons[i]),
+                    label: _labels[i],
+                  ),
+                ),
+              ),
+            ),
     );
   }
 }

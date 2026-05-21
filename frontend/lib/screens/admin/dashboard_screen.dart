@@ -70,7 +70,7 @@ class DashboardScreen extends ConsumerWidget {
               child: Row(children: [
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('Welcome, ${auth.adminName ?? "Admin"} 👋',
+                    Text('Welcome, ${(auth.adminName?.isNotEmpty == true) ? auth.adminName : "Admin"} 👋',
                         style: const TextStyle(
                             color: Colors.white,
                             fontSize: 18,

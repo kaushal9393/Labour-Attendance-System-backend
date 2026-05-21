@@ -49,8 +49,8 @@ Labour System/
 cd backend
 cp .env.example .env
 # Fill in DATABASE_URL, JWT_SECRET, Cloudinary, Firebase values
-
 pip install -r requirements.txt
+
 uvicorn main:app --reload --port 8000
 ```
 

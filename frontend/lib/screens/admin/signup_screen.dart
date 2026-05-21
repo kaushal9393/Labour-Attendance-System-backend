@@ -7,8 +7,6 @@ import '../../core/theme.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 
-/// Self-service signup for new garage owners. Creates the company + first
-/// admin user in one call and drops the user straight onto the dashboard.
 class SignupScreen extends ConsumerStatefulWidget {
   const SignupScreen({super.key});
 
@@ -25,15 +23,15 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
   final _phoneCtrl    = TextEditingController();
   final _passCtrl     = TextEditingController();
 
-  bool _obscure = true;
+  bool   _obscure      = true;
+  bool   _codeEdited   = false; // user manually edited code → stop auto-gen
   Timer? _codeDebounce;
-
-  // Code availability state
-  String? _codeStatus;       // 'available' | 'taken' | 'checking' | null
+  String? _codeStatus; // 'available' | 'taken' | 'checking' | null
 
   @override
   void initState() {
     super.initState();
+    _businessCtrl.addListener(_onBusinessChanged);
     _codeCtrl.addListener(_onCodeChanged);
   }
 
@@ -49,22 +47,49 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
     super.dispose();
   }
 
+  // Auto-generate company code from business name
+  void _onBusinessChanged() {
+    if (_codeEdited) return;
+    final raw = _businessCtrl.text.trim().toUpperCase();
+    final generated = raw
+        .replaceAll(RegExp(r'[^A-Z0-9 ]'), '')
+        .trim()
+        .replaceAll(RegExp(r'\s+'), '-');
+    final clipped = generated.length > 20
+        ? generated.substring(0, 20)
+        : generated;
+    _codeCtrl.removeListener(_onCodeChanged);
+    _codeCtrl.text = clipped;
+    _codeCtrl.selection =
+        TextSelection.collapsed(offset: clipped.length);
+    _codeCtrl.addListener(_onCodeChanged);
+    _scheduleCodeCheck(clipped);
+  }
+
   void _onCodeChanged() {
+    // If user typed something different from auto-gen, lock it
+    final businessGen = _businessCtrl.text.trim().toUpperCase()
+        .replaceAll(RegExp(r'[^A-Z0-9 ]'), '')
+        .trim()
+        .replaceAll(RegExp(r'\s+'), '-');
+    if (_codeCtrl.text != businessGen) _codeEdited = true;
+    _scheduleCodeCheck(_codeCtrl.text.trim());
+  }
+
+  void _scheduleCodeCheck(String code) {
     _codeDebounce?.cancel();
-    final raw = _codeCtrl.text.trim().toUpperCase();
-    if (raw.length < 4) {
+    if (code.length < 4) {
       setState(() => _codeStatus = null);
       return;
     }
     setState(() => _codeStatus = 'checking');
-    _codeDebounce = Timer(const Duration(milliseconds: 400), () async {
+    _codeDebounce = Timer(const Duration(milliseconds: 500), () async {
       try {
-        final resp = await ApiService().checkCompanyCode(raw);
+        final resp = await ApiService().checkCompanyCode(code.toUpperCase());
         if (!mounted) return;
         final data = resp.data as Map<String, dynamic>;
-        setState(() {
-          _codeStatus = (data['available'] == true) ? 'available' : 'taken';
-        });
+        setState(() =>
+            _codeStatus = (data['available'] == true) ? 'available' : 'taken');
       } catch (_) {
         if (mounted) setState(() => _codeStatus = null);
       }
@@ -90,6 +115,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authProvider);
+
     return Scaffold(
       backgroundColor: AppTheme.surface,
       appBar: AppBar(
@@ -98,166 +124,239 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new,
               color: AppTheme.textPrimary, size: 20),
-          onPressed: () => context.go('/admin/login'),
+          onPressed: () => context.go('/welcome'),
         ),
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: LayoutBuilder(builder: (context, constraints) {
+          final isTablet = constraints.maxWidth >= 600;
+          final hPad = isTablet
+              ? ((constraints.maxWidth - 500) / 2).clamp(32.0, 120.0)
+              : 24.0;
+          return SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(hPad, 0, hPad, 32),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // Header
               const SizedBox(height: 8),
               Center(
                 child: Container(
-                  width: 72,
-                  height: 72,
+                  width: 76,
+                  height: 76,
                   decoration: BoxDecoration(
                     color: AppTheme.accentLight,
                     shape: BoxShape.circle,
                     border: Border.all(
-                        color: AppTheme.accent.withValues(alpha: 0.25),
-                        width: 2),
+                        color: AppTheme.accent.withValues(alpha: 0.3), width: 2),
                   ),
                   child: const Icon(Icons.add_business_rounded,
-                      color: AppTheme.accent, size: 36),
+                      color: AppTheme.accent, size: 38),
                 ),
               ),
               const SizedBox(height: 16),
               const Center(
-                  child: Text('Create your account',
-                      style: TextStyle(
-                          color: AppTheme.textPrimary,
-                          fontSize: 24,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.5))),
+                child: Text('Create your account',
+                    style: TextStyle(
+                        color: AppTheme.textPrimary,
+                        fontSize: 26,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.5)),
+              ),
               const SizedBox(height: 4),
               const Center(
-                  child: Text('Set up your garage in under a minute',
-                      style: TextStyle(
-                          color: AppTheme.textSecondary, fontSize: 13))),
-              const SizedBox(height: 24),
+                child: Text('Set up your garage in under a minute',
+                    style:
+                        TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+              ),
+              const SizedBox(height: 28),
 
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: AppTheme.cardBg,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: AppTheme.divider),
-                ),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    children: [
-                      _label('Business'),
-                      TextFormField(
-                        controller: _businessCtrl,
-                        textCapitalization: TextCapitalization.words,
-                        decoration: const InputDecoration(
-                          labelText: 'Business name',
-                          hintText: 'Mehta Auto Garage',
-                          prefixIcon: Icon(Icons.storefront_outlined),
-                        ),
-                        validator: (v) =>
-                            (v == null || v.trim().length < 2) ? 'Required' : null,
-                      ),
-                      const SizedBox(height: 14),
-                      TextFormField(
-                        controller: _codeCtrl,
-                        textCapitalization: TextCapitalization.characters,
-                        inputFormatters: [
-                          UpperCaseTextFormatter(),
-                          FilteringTextInputFormatter.allow(
-                              RegExp(r'[A-Z0-9_-]')),
-                          LengthLimitingTextInputFormatter(20),
-                        ],
-                        decoration: InputDecoration(
-                          labelText: 'Company code',
-                          hintText: 'MEHTA-AUTO',
-                          helperText:
-                              '4-20 chars · letters, digits, - or _ · used in kiosk URL',
-                          prefixIcon: const Icon(Icons.tag),
-                          suffixIcon: _codeSuffixIcon(),
-                        ),
-                        validator: (v) {
-                          if (v == null || v.length < 4) return 'Min 4 characters';
-                          if (_codeStatus == 'taken') return 'Already taken';
-                          return null;
-                        },
-                      ),
+              // ── Business section ──────────────────────────────
+              _SectionLabel(icon: Icons.storefront_outlined, label: 'Business'),
+              const SizedBox(height: 10),
 
-                      const SizedBox(height: 22),
-                      _label('Owner'),
-                      TextFormField(
-                        controller: _ownerCtrl,
-                        textCapitalization: TextCapitalization.words,
-                        decoration: const InputDecoration(
-                          labelText: 'Your name',
-                          prefixIcon: Icon(Icons.person_outline),
+              Form(
+                key: _formKey,
+                child: Column(
+                  children: [
+                    _Field(
+                      controller: _businessCtrl,
+                      label: 'Business name',
+                      hint: 'Mehta Auto Garage',
+                      icon: Icons.storefront_outlined,
+                      caps: TextCapitalization.words,
+                      validator: (v) => (v == null || v.trim().length < 2)
+                          ? 'Business name required'
+                          : null,
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Company code with availability badge
+                    TextFormField(
+                      controller: _codeCtrl,
+                      textCapitalization: TextCapitalization.characters,
+                      style: const TextStyle(
+                          color: AppTheme.textPrimary,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 1),
+                      inputFormatters: [
+                        UpperCaseTextFormatter(),
+                        FilteringTextInputFormatter.allow(
+                            RegExp(r'[A-Z0-9_-]')),
+                        LengthLimitingTextInputFormatter(20),
+                      ],
+                      decoration: InputDecoration(
+                        labelText: 'Company code',
+                        hintText: 'MEHTA-AUTO',
+                        prefixIcon: const Icon(Icons.tag_rounded),
+                        suffixIcon: _codeSuffixIcon(),
+                        helperText: 'Auto-generated · tap to edit',
+                        helperStyle: const TextStyle(
+                            color: AppTheme.textSecondary, fontSize: 11),
+                        filled: true,
+                        fillColor: AppTheme.cardBg,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide:
+                              const BorderSide(color: AppTheme.divider),
                         ),
-                        validator: (v) => (v == null || v.trim().isEmpty)
-                            ? 'Required'
-                            : null,
-                      ),
-                      const SizedBox(height: 14),
-                      TextFormField(
-                        controller: _emailCtrl,
-                        keyboardType: TextInputType.emailAddress,
-                        decoration: const InputDecoration(
-                          labelText: 'Email',
-                          prefixIcon: Icon(Icons.email_outlined),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide:
+                              const BorderSide(color: AppTheme.divider),
                         ),
-                        validator: (v) {
-                          if (v == null || v.isEmpty) return 'Required';
-                          if (!v.contains('@') || !v.contains('.')) {
-                            return 'Enter a valid email';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 14),
-                      TextFormField(
-                        controller: _phoneCtrl,
-                        keyboardType: TextInputType.phone,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                          LengthLimitingTextInputFormatter(15),
-                        ],
-                        decoration: const InputDecoration(
-                          labelText: 'Phone',
-                          prefixIcon: Icon(Icons.phone_outlined),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(
+                              color: AppTheme.accent, width: 1.5),
                         ),
-                        validator: (v) =>
-                            (v == null || v.trim().length < 7)
-                                ? 'Enter a valid number'
-                                : null,
+                        errorBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide:
+                              const BorderSide(color: AppTheme.error),
+                        ),
+                        focusedErrorBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(
+                              color: AppTheme.error, width: 1.5),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 16),
                       ),
-                      const SizedBox(height: 14),
-                      TextFormField(
-                        controller: _passCtrl,
-                        obscureText: _obscure,
-                        decoration: InputDecoration(
-                          labelText: 'Password',
-                          helperText: 'At least 8 characters',
-                          prefixIcon: const Icon(Icons.lock_outline),
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                                _obscure
-                                    ? Icons.visibility_off_outlined
-                                    : Icons.visibility_outlined,
-                                color: AppTheme.textSecondary),
-                            onPressed: () =>
-                                setState(() => _obscure = !_obscure),
+                      validator: (v) {
+                        if (v == null || v.length < 4) {
+                          return 'Min 4 characters';
+                        }
+                        if (_codeStatus == 'taken') return 'Already taken — try another';
+                        return null;
+                      },
+                    ),
+
+                    const SizedBox(height: 24),
+                    _SectionLabel(
+                        icon: Icons.person_outline, label: 'Owner details'),
+                    const SizedBox(height: 10),
+
+                    _Field(
+                      controller: _ownerCtrl,
+                      label: 'Your name',
+                      hint: 'Ramesh Mehta',
+                      icon: Icons.person_outline,
+                      caps: TextCapitalization.words,
+                      validator: (v) =>
+                          (v == null || v.trim().isEmpty) ? 'Name required' : null,
+                    ),
+                    const SizedBox(height: 12),
+                    _Field(
+                      controller: _emailCtrl,
+                      label: 'Email address',
+                      hint: 'ramesh@example.com',
+                      icon: Icons.email_outlined,
+                      keyboard: TextInputType.emailAddress,
+                      validator: (v) {
+                        if (v == null || v.isEmpty) return 'Email required';
+                        if (!v.contains('@') || !v.contains('.')) {
+                          return 'Enter a valid email';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    _Field(
+                      controller: _phoneCtrl,
+                      label: 'Phone number',
+                      hint: '9876543210',
+                      icon: Icons.phone_outlined,
+                      keyboard: TextInputType.phone,
+                      formatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(15),
+                      ],
+                      validator: (v) => (v == null || v.trim().length < 7)
+                          ? 'Enter a valid number'
+                          : null,
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Password
+                    TextFormField(
+                      controller: _passCtrl,
+                      obscureText: _obscure,
+                      style: const TextStyle(color: AppTheme.textPrimary),
+                      decoration: InputDecoration(
+                        labelText: 'Password',
+                        hintText: 'Min 8 characters',
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscure
+                                ? Icons.visibility_off_outlined
+                                : Icons.visibility_outlined,
+                            color: AppTheme.textSecondary,
+                            size: 20,
                           ),
+                          onPressed: () =>
+                              setState(() => _obscure = !_obscure),
                         ),
-                        validator: (v) =>
-                            (v == null || v.length < 8) ? 'Min 8 characters' : null,
+                        filled: true,
+                        fillColor: AppTheme.cardBg,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide:
+                              const BorderSide(color: AppTheme.divider),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide:
+                              const BorderSide(color: AppTheme.divider),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(
+                              color: AppTheme.accent, width: 1.5),
+                        ),
+                        errorBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide:
+                              const BorderSide(color: AppTheme.error),
+                        ),
+                        focusedErrorBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(
+                              color: AppTheme.error, width: 1.5),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 16),
                       ),
-                    ],
-                  ),
+                      validator: (v) => (v == null || v.length < 8)
+                          ? 'Min 8 characters'
+                          : null,
+                    ),
+                  ],
                 ),
               ),
 
+              // Error banner
               if (auth.error != null) ...[
                 const SizedBox(height: 16),
                 Container(
@@ -282,23 +381,30 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                 ),
               ],
 
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: auth.isLoading ? null : _submit,
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 54),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
+              const SizedBox(height: 24),
+
+              // Submit button
+              SizedBox(
+                height: 54,
+                child: ElevatedButton(
+                  onPressed: auth.isLoading ? null : _submit,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.accent,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: auth.isLoading
+                      ? const SizedBox(
+                          height: 22,
+                          width: 22,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2.5, color: Colors.white))
+                      : const Text('Create Account',
+                          style: TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w700)),
                 ),
-                child: auth.isLoading
-                    ? const SizedBox(
-                        height: 22,
-                        width: 22,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2.5, color: Colors.white))
-                    : const Text('Create account',
-                        style: TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.w700)),
               ),
 
               const SizedBox(height: 18),
@@ -324,29 +430,13 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                   ],
                 ),
               ),
-              const SizedBox(height: 24),
             ],
-          ),
-        ),
+            ),
+          );
+        }),
       ),
     );
   }
-
-  Widget _label(String text) => Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: Text(
-            text,
-            style: const TextStyle(
-              color: AppTheme.textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.2,
-            ),
-          ),
-        ),
-      );
 
   Widget? _codeSuffixIcon() {
     switch (_codeStatus) {
@@ -361,22 +451,111 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
           ),
         );
       case 'available':
-        return const Icon(Icons.check_circle, color: AppTheme.accent);
+        return const Icon(Icons.check_circle_rounded,
+            color: AppTheme.accent, size: 22);
       case 'taken':
-        return const Icon(Icons.cancel, color: AppTheme.error);
+        return const Icon(Icons.cancel_rounded,
+            color: AppTheme.error, size: 22);
     }
     return null;
   }
 }
 
+// ── Reusable field ───────────────────────────────────────────────
+class _Field extends StatelessWidget {
+  final TextEditingController controller;
+  final String label;
+  final String hint;
+  final IconData icon;
+  final TextInputType keyboard;
+  final TextCapitalization caps;
+  final List<TextInputFormatter> formatters;
+  final String? Function(String?)? validator;
+
+  const _Field({
+    required this.controller,
+    required this.label,
+    required this.hint,
+    required this.icon,
+    this.keyboard = TextInputType.text,
+    this.caps = TextCapitalization.none,
+    this.formatters = const [],
+    this.validator,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: keyboard,
+      textCapitalization: caps,
+      inputFormatters: formatters,
+      style: const TextStyle(color: AppTheme.textPrimary),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        hintStyle:
+            const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+        prefixIcon: Icon(icon, size: 20),
+        filled: true,
+        fillColor: AppTheme.cardBg,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: AppTheme.divider),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: AppTheme.divider),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: AppTheme.accent, width: 1.5),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: AppTheme.error),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide:
+              const BorderSide(color: AppTheme.error, width: 1.5),
+        ),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      ),
+      validator: validator,
+    );
+  }
+}
+
+// ── Section label ────────────────────────────────────────────────
+class _SectionLabel extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  const _SectionLabel({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(children: [
+      Icon(icon, size: 15, color: AppTheme.accent),
+      const SizedBox(width: 6),
+      Text(
+        label.toUpperCase(),
+        style: const TextStyle(
+          color: AppTheme.accent,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.2,
+        ),
+      ),
+    ]);
+  }
+}
+
+// ── Formatters ───────────────────────────────────────────────────
 class UpperCaseTextFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) =>
-      TextEditingValue(
-        text: newValue.text.toUpperCase(),
-        selection: newValue.selection,
-      );
+          TextEditingValue o, TextEditingValue n) =>
+      n.copyWith(text: n.text.toUpperCase());
 }

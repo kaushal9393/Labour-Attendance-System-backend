@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,7 +11,7 @@ import '../core/constants.dart';
 List<String> _compressPhotosIsolate(List<String> photos) {
   return photos.map((b64) {
     try {
-      final bytes   = base64Decode(b64);
+      final bytes = base64Decode(b64);
       final decoded = img.decodeImage(bytes);
       if (decoded == null) return b64;
       final needsResize = decoded.width > 320 || decoded.height > 320;
@@ -32,12 +34,23 @@ class ApiService {
 
   void init() {
     _dio = Dio(BaseOptions(
-      baseUrl:        AppConstants.baseUrl,
+      baseUrl: AppConstants.baseUrl,
       connectTimeout: const Duration(seconds: 30),
       receiveTimeout: const Duration(seconds: 120),
-      sendTimeout:    const Duration(seconds: 60),
+      sendTimeout: const Duration(seconds: 60),
       headers: {'Content-Type': 'application/json'},
     ));
+
+    if (!kIsWeb) {
+      _dio.httpClientAdapter = IOHttpClientAdapter(
+        createHttpClient: () {
+          final client = HttpClient();
+          client.badCertificateCallback =
+              (X509Certificate cert, String host, int port) => true;
+          return client;
+        },
+      );
+    }
 
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
@@ -49,6 +62,7 @@ class ApiService {
         handler.next(options);
       },
       onError: (error, handler) async {
+        debugPrint('API Error: ${error.message} \n ${error.error}');
         if (error.response?.statusCode == 401) {
           final prefs = await SharedPreferences.getInstance();
           await prefs.remove(AppConstants.keyToken);
@@ -144,7 +158,8 @@ class ApiService {
       _dio.post('/attendance/manual-checkout', data: {
         'employee_id': employeeId,
         'attendance_date': attendanceDate.toIso8601String().substring(0, 10),
-        if (checkoutTime != null) 'checkout_time': checkoutTime.toIso8601String(),
+        if (checkoutTime != null)
+          'checkout_time': checkoutTime.toIso8601String(),
       });
 
   Future<Response> manualEditAttendance(Map<String, dynamic> body) =>
@@ -187,11 +202,15 @@ class ApiService {
       _dio.put('/settings', data: body);
 
   // ── Monthly Working Days ──────────────────────────────────────
-  Future<Response> getMonthlyWorkingDays({required int month, required int year}) =>
-      _dio.get('/working-days', queryParameters: {'month': month, 'year': year});
+  Future<Response> getMonthlyWorkingDays(
+          {required int month, required int year}) =>
+      _dio.get('/working-days',
+          queryParameters: {'month': month, 'year': year});
 
-  Future<Response> setMonthlyWorkingDays({required int month, required int year, required int workingDays}) =>
-      _dio.put('/working-days', data: {'month': month, 'year': year, 'working_days': workingDays});
+  Future<Response> setMonthlyWorkingDays(
+          {required int month, required int year, required int workingDays}) =>
+      _dio.put('/working-days',
+          data: {'month': month, 'year': year, 'working_days': workingDays});
 
   // ── Notifications ─────────────────────────────────────────────
   Future<Response> getNotifications() => _dio.get('/notifications');

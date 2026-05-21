@@ -59,7 +59,7 @@ class _SplashScreenState extends State<SplashScreen>
                     color: AppTheme.accent, size: 80),
               ),
               const SizedBox(height: 28),
-              const Text('Garage Attendance',
+              const Text('FaceScan',
                   style: TextStyle(
                       color: AppTheme.textPrimary,
                       fontSize: 30,

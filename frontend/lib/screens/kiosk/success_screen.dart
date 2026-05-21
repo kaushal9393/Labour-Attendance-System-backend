@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/constants.dart';
 import '../../core/theme.dart';
 
 class SuccessScreen extends StatefulWidget {
@@ -23,7 +24,7 @@ class _SuccessScreenState extends State<SuccessScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _scaleAnim;
-  int _countdown = 3;
+  int _countdown = AppConstants.successAutoReturn;
   Timer? _timer;
 
   @override

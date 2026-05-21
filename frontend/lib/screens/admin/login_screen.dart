@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme.dart';
-import '../../core/constants.dart';
 import '../../providers/auth_provider.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -120,17 +119,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, color: AppTheme.textPrimary, size: 20),
-          onPressed: () async {
-            final prefs = await SharedPreferences.getInstance();
-            await prefs.remove(AppConstants.keyMode);
-            if (context.mounted) context.go('/mode-select');
-          },
+          onPressed: () => context.go('/welcome'),
         ),
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
+        child: LayoutBuilder(builder: (context, constraints) {
+          final isTablet = constraints.maxWidth >= 600;
+          final hPad = isTablet
+              ? ((constraints.maxWidth - 480) / 2).clamp(32.0, 120.0)
+              : 24.0;
+          return SingleChildScrollView(
+            padding: EdgeInsets.symmetric(horizontal: hPad),
+            child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 24),
@@ -285,23 +285,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ),
               ),
               const SizedBox(height: 6),
-              Center(
-                child: TextButton(
-                  onPressed: () => context.go('/mode-select'),
-                  child: const Text('← Back to Mode Select',
-                      style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
-                ),
-              ),
               const SizedBox(height: 24),
             ],
-          ),
-        ),
+            ),
+          );
+        }),
       ),
     );
   }
 }
 
-// ── PIN Setup Dialog ─────────────────────────────────────────────
+// ── PIN Setup Dialog ──────────────────────────────────────────────
 class _PinSetupDialog extends StatefulWidget {
   final void Function(String? pin) onDone;
   const _PinSetupDialog({required this.onDone});
@@ -354,19 +348,19 @@ class _PinSetupDialogState extends State<_PinSetupDialog> {
     return Dialog(
       backgroundColor: AppTheme.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.lock_rounded, color: AppTheme.accent, size: 40),
-          const SizedBox(height: 12),
+          const Icon(Icons.lock_rounded, color: AppTheme.accent, size: 36),
+          const SizedBox(height: 10),
           Text(_step2 ? 'PIN confirm karo' : 'PIN set karo',
               style: const TextStyle(color: AppTheme.textPrimary,
-                  fontSize: 18, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 4),
+                  fontSize: 17, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 3),
           Text(_step2 ? 'Dobara same PIN daalo' : 'Agle baar seedha PIN se login hoga',
-              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
               textAlign: TextAlign.center),
-          const SizedBox(height: 24),
+          const SizedBox(height: 18),
 
           // Dots
           Row(
@@ -374,8 +368,8 @@ class _PinSetupDialogState extends State<_PinSetupDialog> {
             children: List.generate(6, (i) {
               final filled = i < _current.length;
               return Container(
-                margin: const EdgeInsets.symmetric(horizontal: 6),
-                width: 16, height: 16,
+                margin: const EdgeInsets.symmetric(horizontal: 5),
+                width: 14, height: 14,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: filled ? AppTheme.accent : Colors.transparent,
@@ -385,32 +379,32 @@ class _PinSetupDialogState extends State<_PinSetupDialog> {
               );
             }),
           ),
-          const SizedBox(height: 8),
-          SizedBox(height: 18,
+          const SizedBox(height: 6),
+          SizedBox(height: 16,
             child: Text(_error,
-                style: const TextStyle(color: AppTheme.error, fontSize: 12))),
-          const SizedBox(height: 12),
+                style: const TextStyle(color: AppTheme.error, fontSize: 11))),
+          const SizedBox(height: 8),
 
           // Keypad
           Column(children: [
             _keyRow(['1', '2', '3']),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             _keyRow(['4', '5', '6']),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             _keyRow(['7', '8', '9']),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             Row(children: [
               Expanded(
                 child: TextButton(
                   onPressed: () => widget.onDone(null),
-                  child: const Text('Skip', style: TextStyle(color: AppTheme.textSecondary)),
+                  child: const Text('Skip', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
                 ),
               ),
               Expanded(child: _keyBtn('0')),
               Expanded(
                 child: IconButton(
                   onPressed: _onDelete,
-                  icon: const Icon(Icons.backspace_outlined, color: AppTheme.textPrimary),
+                  icon: const Icon(Icons.backspace_outlined, color: AppTheme.textPrimary, size: 20),
                 ),
               ),
             ]),
@@ -427,8 +421,8 @@ class _PinSetupDialogState extends State<_PinSetupDialog> {
   Widget _keyBtn(String d) => GestureDetector(
     onTap: () => _onKey(d),
     child: Container(
-      margin: const EdgeInsets.all(4),
-      height: 52,
+      margin: const EdgeInsets.all(3),
+      height: 46,
       decoration: BoxDecoration(
         color: AppTheme.cardBg,
         borderRadius: BorderRadius.circular(12),

@@ -60,6 +60,7 @@ Thumbs.db
 .idea/
 .vscode/settings.json
 *.iml
+.claude/
 
 # ── Secrets / credentials ──────────────────────────────────
 google-services.json

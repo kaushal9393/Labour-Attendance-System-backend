@@ -7,6 +7,9 @@ import '../../core/constants.dart';
 import '../../services/api_service.dart';
 import '../../services/cache_service.dart';
 import '../../providers/auth_provider.dart';
+import 'help_screen.dart';
+import 'privacy_policy_screen.dart';
+import 'terms_screen.dart';
 
 class AdminSettingsScreen extends ConsumerStatefulWidget {
   const AdminSettingsScreen({super.key});
@@ -95,7 +98,38 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
     } catch (_) {}
   }
 
+  int _todToMinutes(TimeOfDay t) => t.hour * 60 + t.minute;
+
+  bool _validateWindows() {
+    // Check-in window: start must be before end
+    if (_todToMinutes(_ciStart) >= _todToMinutes(_ciEnd)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Check-in window: start time must be before end time'),
+        backgroundColor: AppTheme.error,
+      ));
+      return false;
+    }
+    // Checkout window: start must be before end
+    if (_todToMinutes(_coStart) >= _todToMinutes(_coEnd)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Check-out window: start time must be before end time'),
+        backgroundColor: AppTheme.error,
+      ));
+      return false;
+    }
+    // Checkout window must start after check-in window ends
+    if (_todToMinutes(_coStart) <= _todToMinutes(_ciEnd)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Check-out window must start after check-in window ends'),
+        backgroundColor: AppTheme.error,
+      ));
+      return false;
+    }
+    return true;
+  }
+
   Future<void> _save() async {
+    if (!_validateWindows()) return;
     setState(() => _saving = true);
     try {
       // Save main settings
@@ -225,11 +259,15 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
         backgroundColor: AppTheme.surface,
         elevation: 0,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      body: LayoutBuilder(builder: (context, constraints) {
+        final hPad = constraints.maxWidth >= 600
+            ? ((constraints.maxWidth - 560) / 2).clamp(16.0, 120.0)
+            : 16.0;
+        return SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(hPad, 8, hPad, 32),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
             // ── Work Hours ──────────────────────────────────
             _SectionHeader(icon: Icons.schedule_outlined, title: 'Work Hours'),
             const SizedBox(height: 12),
@@ -457,14 +495,25 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
             _SectionHeader(icon: Icons.manage_accounts_outlined, title: 'Account'),
             const SizedBox(height: 12),
             _SettingsTile(
-              icon: Icons.swap_horiz,
+              icon: Icons.face_retouching_natural,
               iconColor: const Color(0xFF1565C0),
-              title: 'Switch App Mode',
-              subtitle: 'Go back to Employee / Owner selection',
+              title: 'Launch Kiosk Mode',
+              subtitle: 'Switch to employee face check-in screen',
               onTap: () async {
                 final prefs = await SharedPreferences.getInstance();
-                await prefs.remove(AppConstants.keyMode);
-                if (context.mounted) context.go('/mode-select');
+                final code = prefs.getString(AppConstants.keyCompanyCode);
+                if (!context.mounted) return;
+                if (code == null || code.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Company setup incomplete — login again to fix'),
+                      backgroundColor: AppTheme.error,
+                    ),
+                  );
+                  return;
+                }
+                await prefs.setString(AppConstants.keyMode, AppConstants.modeKiosk);
+                if (context.mounted) context.go('/kiosk/splash');
               },
             ),
             const SizedBox(height: 10),
@@ -483,6 +532,33 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
             // ── About ────────────────────────────────────────
             _SectionHeader(icon: Icons.info_outline, title: 'About'),
             const SizedBox(height: 12),
+            _SettingsTile(
+              icon: Icons.help_outline,
+              iconColor: AppTheme.accent,
+              title: 'Help & FAQ',
+              subtitle: 'How to use the app, troubleshooting',
+              onTap: () => Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const HelpScreen())),
+            ),
+            const SizedBox(height: 10),
+            _SettingsTile(
+              icon: Icons.privacy_tip_outlined,
+              iconColor: const Color(0xFF1565C0),
+              title: 'Privacy Policy',
+              subtitle: 'How we collect and use your data',
+              onTap: () => Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen())),
+            ),
+            const SizedBox(height: 10),
+            _SettingsTile(
+              icon: Icons.description_outlined,
+              iconColor: const Color(0xFF6A1B9A),
+              title: 'Terms of Service',
+              subtitle: 'Usage terms and conditions',
+              onTap: () => Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const TermsScreen())),
+            ),
+            const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
@@ -493,14 +569,15 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
               child: const Row(children: [
                 Icon(Icons.verified_outlined, color: AppTheme.accent, size: 20),
                 SizedBox(width: 12),
-                Text('Garage Attendance  •  v1.0.0',
+                Text('FaceScan  •  v1.0.0',
                     style: TextStyle(color: AppTheme.textPrimary, fontSize: 13)),
               ]),
             ),
             const SizedBox(height: 24),
           ],
-        ),
-      ),
+          ),
+        );
+      }),
     );
   }
 }

@@ -1,15 +1,25 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
-
 import 'core/theme.dart';
 import 'core/router.dart';
 import 'services/api_service.dart';
 import 'services/cache_service.dart';
 import 'services/notification_service.dart';
+
+class MyHttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    return super.createHttpClient(context)
+      ..badCertificateCallback =
+          (X509Certificate cert, String host, int port) => true;
+  }
+}
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackground(RemoteMessage message) async {
@@ -18,6 +28,7 @@ Future<void> _firebaseMessagingBackground(RemoteMessage message) async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  HttpOverrides.global = MyHttpOverrides();
 
   // Lock orientation to portrait by default (can be landscape on tablet)
   await SystemChrome.setPreferredOrientations([
@@ -38,7 +49,9 @@ Future<void> main() async {
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackground);
     await FirebaseMessaging.instance
         .setForegroundNotificationPresentationOptions(
-      alert: true, badge: true, sound: true,
+      alert: true,
+      badge: true,
+      sound: true,
     );
   } catch (_) {
     // Firebase not configured yet — app still works
@@ -67,7 +80,7 @@ class GarageAttendanceApp extends ConsumerWidget {
     final router = ref.watch(routerProvider);
 
     return MaterialApp.router(
-      title: 'Garage Attendance',
+      title: 'FaceScan',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark,
       routerConfig: router,

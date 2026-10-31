@@ -7,7 +7,7 @@ import "@aws-amplify/ui-react/styles.css";
 
 // Cognito Identity Pool — gives unauthenticated browser users a temporary
 // credential scoped to rekognition:StartFaceLivenessSession only.
-const IDENTITY_POOL_ID = "ap-south-1:b05bdf96-4284-4c3c-bd51-13c79ce34798";
+const IDENTITY_POOL_ID = "ap-south-1:93025b74-634b-4963-be3d-21180aa668be";
 const REGION = "ap-south-1";
 
 Amplify.configure({
